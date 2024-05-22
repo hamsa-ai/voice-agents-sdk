@@ -1,0 +1,63 @@
+#fancy-floating-button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 70px;
+    height: 70px;
+    background: linear-gradient(135deg, #ff7e5f, #feb47b);
+    border-radius: 50%;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.3s ease-in-out;
+    z-index: 1000;
+    border: none;
+}
+
+#fancy-floating-button:hover {
+    transform: scale(1.2);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+#fancy-floating-button .icon {
+    font-size: 32px;
+    transition: transform 0.3s ease-in-out;
+}
+
+#fancy-floating-button.call-in-progress {
+    background: linear-gradient(135deg, #ff512f, #dd2476);
+}
+
+#fancy-floating-button.call-in-progress .icon {
+    transform: rotate(180deg);
+}
+
+@keyframes wave {
+    0% {
+        transform: scale(0.8);
+        opacity: 0.7;
+    }
+    100% {
+        transform: scale(2.2);
+        opacity: 0;
+    }
+}
+
+.wave {
+    position: absolute;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: rgba(255, 81, 47, 0.5);
+    animation: wave 1.5s infinite;
+    z-index: -1;
+    pointer-events: none;
+}
+
+#fancy-floating-button.wave-effect .wave {
+    animation: wave 1.5s infinite ease-in-out;
+}
