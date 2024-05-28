@@ -1,7 +1,7 @@
 var Buffer = require('buffer/').Buffer;
 
 export default class AudioPlayer {
-    constructor(ws) {
+    constructor(ws, onSpeaking, onListening) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.audioContext = new AudioContext({ sampleRate: 17500 });
         this.audioData = [];
@@ -11,7 +11,10 @@ export default class AudioPlayer {
         this.processor.connect(this.audioContext.destination); // Always connected
         this.marks = [];
         this.isCurrentlyPlaying = false;
+        this.isPaused = false; // Added a flag to keep track of pause state
         this.updatePlayingState();
+        this.onSpeakingCB = onSpeaking;   
+        this.onListeningCB = onListening;        
     }
 
     enqueueAudio(base64Data) {
@@ -21,6 +24,8 @@ export default class AudioPlayer {
     }
 
     processAudio(audioProcessingEvent) {
+        if (this.isPaused) return; // Check if the playback is paused
+
         let outputBuffer = audioProcessingEvent.outputBuffer;
 
         for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
@@ -43,8 +48,12 @@ export default class AudioPlayer {
         this.isCurrentlyPlaying = this.audioData.length > 0;
 
         if (wasPlaying !== this.isCurrentlyPlaying) {
-            const event = new CustomEvent('audioplaystatechange', { detail: this.isCurrentlyPlaying });
-            window.dispatchEvent(event);
+            if (this.isCurrentlyPlaying === true) {
+                if (this.onSpeakingCB) this.onSpeakingCB()
+            } 
+            if (this.isCurrentlyPlaying === false) {
+                if (this.onListeningCB) this.onListeningCB()
+            }         
         }
     }
 
@@ -63,6 +72,14 @@ export default class AudioPlayer {
 
     addMark(mark_name) {
         this.marks.push(mark_name);
+    }
+
+    pause() {
+        this.isPaused = true; // Set the flag to true to pause processing
+    }
+
+    resume() {
+        this.isPaused = false; // Set the flag to false to resume processing
     }
 
     pcm16ToFloat32(pcm16Array) {

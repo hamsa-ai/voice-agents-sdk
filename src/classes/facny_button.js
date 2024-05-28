@@ -1,10 +1,10 @@
-export class FancyButton {
-    constructor(WSManager) {
-        this.WSManager = WSManager
+export default class FancyButton {
+    constructor() {
         this.isCallStarted = false
     }
 
-    createFloatingButton() {
+    createFloatingButton(WSManager) {
+        this.WSManager = WSManager
         const button = document.createElement('div');
         button.id = 'fancy-floating-button';
         button.innerHTML = '<span class="icon">📞</span>'; // Use an appropriate icon
@@ -14,12 +14,12 @@ export class FancyButton {
 
     toggleCall() {
         if (!this.isCallStarted) {
-            startCall();
+            this.startCall();
         } else {
-            endCall();
+            this.endCall();
         }
         this.isCallStarted = !this.isCallStarted;
-        updateButtonAppearance();
+        this.updateButtonAppearance();
     }
 
     startCall() {

@@ -78,6 +78,10 @@
                     </div>
                     <!-- /.navbar-collapse -->
                 </nav>
+                <button onclick="HamsaVoiceAgent.start()">Call</button>
+                <button onclick="HamsaVoiceAgent.end()">Stop</button>
+                <button onclick="HamsaVoiceAgent.pause()">Pause</button>
+                <button onclick="HamsaVoiceAgent.resume()">Resume</button>
             </div>
         </div>
         <!-- //header -->
@@ -211,7 +215,17 @@
                 */
             
                 $().UItoTop({ easingType: 'easeOutQuart' });
-                HamsaVoiceAgent.init('66451833b85951f353daa554')
+                HamsaVoiceAgent.init({
+                    agentId: "6645fbefb85951f35350f900",
+                    renderButton: false,
+                    onStart: () => { console.log("Call started")},
+                    onClosed: () => { console.log("Call ended")},                    
+                    onSpeaking: () => { console.log("Speaking")},
+                    onListening: () => { console.log("Listening")},
+                    onAnswerRecieved: (answer) => { console.log(answer)},
+                    onTransciprtionRecieved: (transcription) => { console.log(transcription) },
+                    onError: (error) => { console.log(error) }
+                })
                 });
         </script>
         <!-- //here ends scrolling icon -->

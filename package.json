@@ -4,7 +4,8 @@
   "description": "",
   "main": "src/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npx webpack && cp dist/bundle.js test/bundle.js && cp dist/bundle.js  ../hamsa-chrome/bundle.js"
   },
   "author": "",
   "license": "ISC",
