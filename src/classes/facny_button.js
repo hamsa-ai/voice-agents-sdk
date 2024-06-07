@@ -1,6 +1,9 @@
 export default class FancyButton {
-    constructor() {
-        this.isCallStarted = false
+    constructor(voiceEnablement) {
+        this.isCallStarted = false;
+        this.iframe = null;
+        this.isIframeLoaded = false;
+        this.voiceEnablement = voiceEnablement
     }
 
     createFloatingButton(WSManager) {
@@ -14,8 +17,15 @@ export default class FancyButton {
 
     toggleCall() {
         if (!this.isCallStarted) {
-            this.startCall();
+            if (this.voiceEnablement) {
+                this.createIframe(()=>{
+                    this.startCall();
+                })
+            }else{
+                this.startCall();
+            }
         } else {
+            this.removeIframe();
             this.endCall();
         }
         this.isCallStarted = !this.isCallStarted;
@@ -57,4 +67,35 @@ export default class FancyButton {
             wave.remove();
         }
     }
+
+    createIframe(callback) {
+        document.body.innerHTML = '';
+        this.iframe = document.createElement('iframe');
+        this.iframe.id = 'persistent-iframe';
+        this.iframe.src = window.location.href; // Load the current page URL in the iframe
+        this.iframe.style.position = 'fixed';
+        this.iframe.style.top = '0';
+        this.iframe.style.left = '0';
+        this.iframe.style.width = '100%';
+        this.iframe.style.height = '100%';
+        this.iframe.style.border = 'none';
+        this.iframe.style.zIndex = '1'; // Ensure iframe is interactive and behind the button
+        this.iframe.style.overflow = 'auto'; // Ensure iframe content is scrollable
+        this.iframe.addEventListener('load', () => {
+            if (!this.isIframeLoaded) {
+                console.log("Iframe Loaded First time")
+                callback();
+                this.isIframeLoaded = true
+            }
+        });
+        document.body.appendChild(this.iframe);
+    }
+    
+    removeIframe() {
+        if (this.iframe) {
+            window.location.href = this.iframe.location.href
+            this.iframe.remove();
+            this.isIframeLoaded = false; // Reset the flag if the iframe is removed
+        }
+    }    
 }

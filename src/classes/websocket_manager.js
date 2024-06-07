@@ -11,7 +11,8 @@ export default class WebSocketManager {
          onAnswerRecieved,
          onSpeaking,
          onListening,
-         onClosed
+         onClosed,
+         voiceEnablement
     ) {
         this.url = `${url}/prompt_${prompt_id}`;
         this.ws = null;
@@ -28,6 +29,7 @@ export default class WebSocketManager {
         this.onSpeakingCB = onSpeaking;
         this.onListeningCB = onListening;
         this.onClosedCB = onClosed;
+        this.voiceEnablement = voiceEnablement;
     }
 
     startCall() {

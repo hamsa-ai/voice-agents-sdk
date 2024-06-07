@@ -2,11 +2,12 @@ import './design/styles.css';
 import WebSocketManager from './classes/websocket_manager'
 import FancyButton from './classes/facny_button';
 let webSocketManager;
+let iframe;
 
-export function init({agentId, renderButton = false, onError = null, onStart = null, onTransciprtionRecieved = null, onAnswerRecieved = null, onSpeaking = null, onListening = null, onClosed = null}) {
-    const fancyButton = new FancyButton()
+export function init({agentId, renderButton = false, voiceEnablement = false, onError = null, onStart = null, onTransciprtionRecieved = null, onAnswerRecieved = null, onSpeaking = null, onListening = null, onClosed = null}) {
+    const fancyButton = new FancyButton(voiceEnablement)
     let _onSpeaking = onSpeaking, _onListening = onListening
-    if (renderButton) {
+    if (renderButton || voiceEnablement) {
         _onSpeaking = () => {
             fancyButton.startWaveAnimation()
             if (onSpeaking) onSpeaking()
@@ -26,10 +27,11 @@ export function init({agentId, renderButton = false, onError = null, onStart = n
          onAnswerRecieved,
          _onSpeaking,
          _onListening,
-         onClosed
+         onClosed,
+         voiceEnablement
     );
 
-    if (renderButton) {
+    if (renderButton || voiceEnablement) {
         fancyButton.createFloatingButton(webSocketManager)
     }
 
@@ -58,3 +60,4 @@ export function pause() {
 export function resume() {
     webSocketManager.resumeCall()
 }
+
