@@ -32,7 +32,7 @@ export default class AudioRecorder {
     processAudioData(rawAudioData, ws) {
         if (ws && ws.readyState === WebSocket.OPEN) {
             const base64String = btoa(String.fromCharCode(...new Uint8Array(rawAudioData)));
-            ws.send(JSON.stringify({ event: 'media', streamSid: 'stream1', media: { payload: base64String } }));
+            ws.send(JSON.stringify({ event: 'media', streamSid: 'WEBSDK', media: { payload: base64String } }));
         }
     }
 

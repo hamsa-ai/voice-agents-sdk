@@ -43,7 +43,7 @@ export default class WebSocketManager {
     }
 
     onOpen() {
-        this.ws.send(JSON.stringify({ event: 'start', streamSid: 'stream1' }));
+        this.ws.send(JSON.stringify({ event: 'start', streamSid: 'WEBSDK' }));
         this.isConnected = true;
         this.audioRecorder.startStreaming(this.ws);
         if (this.onStartCB) this.onStartCB()
@@ -69,6 +69,10 @@ export default class WebSocketManager {
             case 'answer':
                 if (this.onAnswerRecievedCB) this.onAnswerRecievedCB(message.content)
                 break;
+            case 'tools':
+                const tools_response = this.run_tools(message.content)
+                this.ws.send(JSON.stringify({ event: 'tools_response', tools_response: tools_response,  streamSid: 'WEBSDK' }));
+                break;            
             default:
                 break;
         }
@@ -99,5 +103,37 @@ export default class WebSocketManager {
     resumeCall() {
         this.audioPlayer.resume()
         this.audioRecorder.resume() 
-     }    
+    }
+
+    run_tools(tools_array) {
+        const results = [];
+    
+        tools_array.forEach(item => {
+            if (item.type === 'function') {
+                const functionName = item.function.name;
+                const functionArgs = JSON.parse(item.function.arguments);
+                if (typeof window[functionName] === 'function') {
+                    const response = window[functionName](...Object.values(functionArgs));
+                    results.push({
+                        id: item.id,
+                        function: {
+                            name: functionName,
+                            response: response
+                        }
+                    });
+                } else {
+                    results.push({
+                        id: item.id,
+                        function: {
+                            name: functionName,
+                            response: "Error could not find the function"
+                        }
+                    });                    
+                    console.log(`Function ${functionName} is not defined`);
+                }
+            }
+        });
+    
+        return results;
+    }        
 }

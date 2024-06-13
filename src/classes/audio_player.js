@@ -60,7 +60,7 @@ export default class AudioPlayer {
     processMarks() {
         if (this.marks.length > 0 && this.audioData.length === 0) {
             const mark_name = this.marks.shift();
-            this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'stream1', mark: { name: mark_name } }));
+            this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'WEBSDK', mark: { name: mark_name } }));
         }
     }
 

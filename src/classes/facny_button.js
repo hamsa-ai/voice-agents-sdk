@@ -89,11 +89,12 @@ export default class FancyButton {
             }
         });
         document.body.appendChild(this.iframe);
+        this.createFloatingButton(this.WSManager);
     }
     
     removeIframe() {
         if (this.iframe) {
-            window.location.href = this.iframe.location.href
+            window.location.href = this.iframe.contentWindow.location.href;
             this.iframe.remove();
             this.isIframeLoaded = false; // Reset the flag if the iframe is removed
         }
