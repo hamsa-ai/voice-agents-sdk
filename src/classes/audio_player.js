@@ -4,82 +4,49 @@ export default class AudioPlayer {
     constructor(ws, onSpeaking, onListening) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.audioContext = new AudioContext({ sampleRate: 17500 });
-        this.audioData = [];
         this.ws = ws;
-        this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-        this.processor.onaudioprocess = this.processAudio.bind(this);
-        this.processor.connect(this.audioContext.destination); // Always connected
-        this.marks = [];
-        this.isCurrentlyPlaying = false;
         this.isPaused = false; // Added a flag to keep track of pause state
-        this.updatePlayingState();
         this.onSpeakingCB = onSpeaking;   
-        this.onListeningCB = onListening;        
+        this.onListeningCB = onListening;
+
+        this.initAudioWorklet();
+    }
+
+    async initAudioWorklet() {
+        await this.audioContext.audioWorklet.addModule(new URL('./audio-player-processor.js', import.meta.url));
+        this.processor = new AudioWorkletNode(this.audioContext, 'audio-player-processor');
+
+        this.processor.port.onmessage = (event) => {
+            if (event.data.type === 'mark') {
+                this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'WEBSDK', mark: { name: event.data.markName } }));
+            }
+        };
+
+        this.processor.connect(this.audioContext.destination);
     }
 
     enqueueAudio(base64Data) {
-        const binaryData = Buffer(base64Data, 'base64');
+        const binaryData = Buffer.from(base64Data, 'base64');
         const audioSamples = this.pcm16ToFloat32(binaryData);
-        this.audioData.push(...audioSamples);
-    }
-
-    processAudio(audioProcessingEvent) {
-        if (this.isPaused) return; // Check if the playback is paused
-
-        let outputBuffer = audioProcessingEvent.outputBuffer;
-
-        for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-            let outputData = outputBuffer.getChannelData(channel);
-            let inputData = this.audioData.splice(0, outputData.length);
-
-            if (inputData.length > 0) {
-                outputData.set(inputData);
-            } else {
-                outputData.fill(0); // Output silence when no data is available
-            }
-        }
-
-        this.updatePlayingState();
-        this.processMarks();
-    }
-
-    updatePlayingState() {
-        const wasPlaying = this.isCurrentlyPlaying;
-        this.isCurrentlyPlaying = this.audioData.length > 0;
-
-        if (wasPlaying !== this.isCurrentlyPlaying) {
-            if (this.isCurrentlyPlaying === true) {
-                if (this.onSpeakingCB) this.onSpeakingCB()
-            } 
-            if (this.isCurrentlyPlaying === false) {
-                if (this.onListeningCB) this.onListeningCB()
-            }         
-        }
-    }
-
-    processMarks() {
-        if (this.marks.length > 0 && this.audioData.length === 0) {
-            const mark_name = this.marks.shift();
-            this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'WEBSDK', mark: { name: mark_name } }));
-        }
-    }
-
-    stopAndClear() {
-        this.audioData = [];
-        this.marks = [];
-        this.updatePlayingState();
-    }
-
-    addMark(mark_name) {
-        this.marks.push(mark_name);
+        this.processor.port.postMessage({ type: 'enqueue', audioSamples });
     }
 
     pause() {
-        this.isPaused = true; // Set the flag to true to pause processing
+        this.isPaused = true;
+        this.processor.port.postMessage({ type: 'pause' });
     }
 
     resume() {
-        this.isPaused = false; // Set the flag to false to resume processing
+        this.isPaused = false;
+        this.processor.port.postMessage({ type: 'resume' });
+    }
+
+    stopAndClear() {
+        this.processor.port.postMessage({ type: 'clear' });
+    }
+
+    addMark(markName) {
+        this.processor.port.postMessage({ type: 'addMark', markName });
     }
 
     pcm16ToFloat32(pcm16Array) {

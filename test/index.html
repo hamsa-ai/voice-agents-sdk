@@ -30,7 +30,7 @@
         <link href="//fonts.googleapis.com/css?family=Righteous&subset=latin-ext" rel="stylesheet">
         <link href="//fonts.googleapis.com/css?family=Roboto+Condensed:400,700italic,700,400italic,300italic,300" rel="stylesheet" type="text/css">
         <!-- //font -->
-        <script src="bundle.js"></script>
+        <script src="dist/bundle.js"></script>
         <script src="js/jquery-1.11.1.min.js"></script>
         <script src="js/bootstrap.js"></script>
         <script src="js/SmoothScroll.min.js"></script>
@@ -78,10 +78,10 @@
                     </div>
                     <!-- /.navbar-collapse -->
                 </nav>
-                <button onclick="HamsaVoiceAgent.start()">Call</button>
-                <button onclick="HamsaVoiceAgent.end()">Stop</button>
-                <button onclick="HamsaVoiceAgent.pause()">Pause</button>
-                <button onclick="HamsaVoiceAgent.resume()">Resume</button>
+                <button onclick="agent.start()">Call</button>
+                <button onclick="agent.end()">Stop</button>
+                <button onclick="agent.pause()">Pause</button>
+                <button onclick="agent.resume()">Resume</button>
             </div>
         </div>
         <!-- //header -->
@@ -215,18 +215,29 @@
                 */
             
                 $().UItoTop({ easingType: 'easeOutQuart' });
-                HamsaVoiceAgent.init({
-                    agentId: "664e3d84e173e72ba505fe8f",
+                const HAMSA_API_KEY = "6af5e0c1-addb-4874-a716-78e3c445f098"
+                agent = new HamsaVoiceAgent(HAMSA_API_KEY)
+                agent.init({
+                    agentId: "5f93f518-1605-4c08-a72a-82abff68b259",
+                    params: {
+                        name: "Ibrahiem",
+                        agent_name: "Sarah"
+                    },
                     renderButton: false,
-                    voiceEnablement: true,
-                    onStart: () => { console.log("Call started")},
-                    onClosed: () => { console.log("Call ended")},                    
-                    onSpeaking: () => { console.log("Speaking")},
-                    onListening: () => { console.log("Listening")},
-                    onAnswerRecieved: (answer) => { console.log(answer)},
-                    onTransciprtionRecieved: (transcription) => { console.log(transcription) },
-                    onError: (error) => { console.log(error) }
+                    voiceEnablement: false,
                 })
+
+                agent.on('start', () => console.log('Call started'));
+                agent.on('callStarted', () => console.log('Call started event emitted'));
+                agent.on('transcriptionReceived', (transcription) => console.log('Transcription:', transcription));
+                agent.on('answerReceived', (answer) => console.log('Answer:', answer));
+                agent.on('speaking', () => console.log('Speaking...'));
+                agent.on('listening', () => console.log('Listening...'));
+                agent.on('callPaused', () => console.log('Call paused'));
+                agent.on('callResumed', () => console.log('Call resumed'));
+                agent.on('callEnded', () => console.log('Call ended'));
+                agent.on('closed', () => console.log('Call closed'));
+                agent.on('error', (error) => console.log('Error:', error));
                 });
         </script>
         <!-- //here ends scrolling icon -->

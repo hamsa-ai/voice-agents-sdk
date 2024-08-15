@@ -5,8 +5,9 @@ module.exports = {
     output: {
         filename: 'bundle.js',
         path: path.resolve(__dirname, 'dist'),
-        library: 'HamsaVoiceAgent',
-        libraryTarget: 'umd'
+        // library: 'HamsaVoiceAgent',
+        libraryTarget: 'umd',
+        globalObject: 'this'
     },
     module: {
         rules: [
@@ -26,5 +27,5 @@ module.exports = {
     resolve: {
         extensions: ['.js']
     },
-    mode: 'production'
+    mode: 'development'
 };

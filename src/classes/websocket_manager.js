@@ -4,7 +4,7 @@ import AudioRecorder from './audio_recorder'
 export default class WebSocketManager {
     constructor(
          url, 
-         prompt_id,
+         conversationId,
          onError,
          onStart,
          onTransciprtionRecieved,
@@ -12,9 +12,10 @@ export default class WebSocketManager {
          onSpeaking,
          onListening,
          onClosed,
-         voiceEnablement
+         voiceEnablement,
+         apiKey
     ) {
-        this.url = `${url}/prompt_${prompt_id}`;
+        this.url = `${url}/${conversationId}?api_key=${apiKey}`;
         this.ws = null;
         this.isConnected = false;
         this.audioPlayer = null;
@@ -30,16 +31,23 @@ export default class WebSocketManager {
         this.onListeningCB = onListening;
         this.onClosedCB = onClosed;
         this.voiceEnablement = voiceEnablement;
+        this.apiKey = apiKey;
     }
 
     startCall() {
-        this.ws = new WebSocket(this.url);
-        this.ws.onopen = this.onOpen.bind(this);
-        this.ws.onmessage = this.onMessage.bind(this);
-        this.ws.onclose = this.onClose.bind(this);
-        this.ws.onerror = this.onError.bind(this);
-        this.audioPlayer = new AudioPlayer(this.ws, this.onSpeakingCB, this.onListeningCB)
-        this.audioRecorder = new AudioRecorder()   
+        try {
+            if (!this.ws) {
+                this.ws = new WebSocket(this.url);
+                this.ws.onopen = this.onOpen.bind(this);
+                this.ws.onmessage = this.onMessage.bind(this);
+                this.ws.onclose = this.onClose.bind(this);
+                this.ws.onerror = this.onError.bind(this);
+                this.audioPlayer = new AudioPlayer(this.ws, this.onSpeakingCB, this.onListeningCB)
+                this.audioRecorder = new AudioRecorder() 
+            }  
+        }catch(e) {
+            console.log(e)
+        }
     }
 
     onOpen() {
@@ -81,7 +89,9 @@ export default class WebSocketManager {
     onClose(event) {
         //document.getElementById('callStatus').textContent = 'Call Ended';
         this.audioPlayer.stopAndClear();
+        this.audioRecorder.stop();
         this.isConnected = false;
+        this.ws = null
     }
 
     onError(error) {
@@ -90,7 +100,10 @@ export default class WebSocketManager {
 
     endCall() {
         if (this.ws) {
+            this.audioPlayer.stopAndClear();
             this.ws.send(JSON.stringify({ event: 'stop' }));
+            this.audioRecorder.stop();            
+            this.#closeWebSocket()
             if (this.onClosedCB) this.onClosedCB()
         }
     }
@@ -135,5 +148,10 @@ export default class WebSocketManager {
         });
     
         return results;
-    }        
+    }
+    #closeWebSocket() {
+        if (this.ws.readyState === WebSocket.OPEN) {
+            this.ws.close(1000, 'Normal Closure');
+        }
+    }            
 }
