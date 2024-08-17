@@ -10,35 +10,28 @@ export class HamsaVoiceAgent extends EventEmitter {
         this.WS_URL = "wss://bots-dev.tryhamsa.com/stream"
     }
 
-    init({
+    async start({
         agentId = null,
         params = {},
         voiceEnablement = false
-    }) {        
-        this.#init_conversation(agentId, params).then((conversationdId)=> {
-            console.log(conversationdId)
-            this.webSocketManager = new WebSocketManager(
-                this.WS_URL,
-                conversationdId,
-                (error) => this.emit('error', error),
-                () => this.emit('start'),
-                (transcription) => this.emit('transcriptionReceived', transcription),
-                (answer) => this.emit('answerReceived', answer),
-                () => this.emit('speaking'),
-                () => this.emit('listening'),
-                () => this.emit('closed'),
-                voiceEnablement,
-                this.apiKey
-            );
-        }).catch((err) => {
-            console.log("Error", err)
-        })
-    }
-
-    start() {
+    }) {
         try {
-            this.webSocketManager.startCall();
-            this.emit('callStarted');
+        const conversationdId = await this.#init_conversation(agentId, params);
+        this.webSocketManager = new WebSocketManager(
+            this.WS_URL,
+            conversationdId,
+            (error) => this.emit('error', error),
+            () => this.emit('start'),
+            (transcription) => this.emit('transcriptionReceived', transcription),
+            (answer) => this.emit('answerReceived', answer),
+            () => this.emit('speaking'),
+            () => this.emit('listening'),
+            () => this.emit('closed'),
+            voiceEnablement,
+            this.apiKey
+        );
+        this.webSocketManager.startCall();
+        this.emit('callStarted');
         } catch (e) {
             this.emit('error', new Error("Error in starting the call! Make sure you initialized the client with init()."));
         }
@@ -83,10 +76,9 @@ export class HamsaVoiceAgent extends EventEmitter {
           try {
             const response = await fetch(`${this.API_URL}/v1/voice-agents/conversation-init`, requestOptions);
             const result = await response.json();
-            console.log(result)
             return result["data"]["jobId"]
           } catch (error) {
-            console.error(error);
+            this.emit('error', new Error("Error in initializing the call, Double check your API_KEY"));
           };
     }
 }

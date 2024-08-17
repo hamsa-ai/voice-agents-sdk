@@ -87,7 +87,6 @@ export default class WebSocketManager {
     }
 
     onClose(event) {
-        //document.getElementById('callStatus').textContent = 'Call Ended';
         this.audioPlayer.stopAndClear();
         this.audioRecorder.stop();
         this.isConnected = false;

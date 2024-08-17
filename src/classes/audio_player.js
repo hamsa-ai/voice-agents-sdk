@@ -1,5 +1,5 @@
-var Buffer = require('buffer/').Buffer;
-
+import { Buffer } from 'buffer';
+ 
 export default class AudioPlayer {
     constructor(ws, onSpeaking, onListening) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -43,6 +43,7 @@ export default class AudioPlayer {
 
     stopAndClear() {
         this.processor.port.postMessage({ type: 'clear' });
+        if (this.onListeningCB) this.onListeningCB()
     }
 
     addMark(markName) {

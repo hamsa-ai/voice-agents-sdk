@@ -22,7 +22,6 @@ export default class AudioRecorder {
                 
             try {
                 await this.audioContext.audioWorklet.addModule(new URL('./audio-processor.js', import.meta.url));
-                console.log('AudioWorklet module loaded successfully');
             } catch (e) {
                 console.error('Failed to load AudioWorklet module', e);
             }

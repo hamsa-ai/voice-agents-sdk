@@ -1,0 +1,32 @@
+export default class WebSocketManager {
+    constructor(url: any, conversationId: any, onError: any, onStart: any, onTransciprtionRecieved: any, onAnswerRecieved: any, onSpeaking: any, onListening: any, onClosed: any, voiceEnablement: any, apiKey: any);
+    url: string;
+    ws: WebSocket;
+    isConnected: boolean;
+    audioPlayer: AudioPlayer;
+    audioRecorder: AudioRecorder;
+    last_transcription_date: Date;
+    last_voice_byte_date: Date;
+    is_media: boolean;
+    onErrorCB: any;
+    onStartCB: any;
+    onTransciprtionRecievedCB: any;
+    onAnswerRecievedCB: any;
+    onSpeakingCB: any;
+    onListeningCB: any;
+    onClosedCB: any;
+    voiceEnablement: any;
+    apiKey: any;
+    startCall(): void;
+    onOpen(): void;
+    onMessage(event: any): void;
+    onClose(event: any): void;
+    onError(error: any): void;
+    endCall(): void;
+    pauseCall(): void;
+    resumeCall(): void;
+    run_tools(tools_array: any): any[];
+    #private;
+}
+import AudioPlayer from './audio_player';
+import AudioRecorder from './audio_recorder';

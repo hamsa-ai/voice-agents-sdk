@@ -8,6 +8,7 @@ class AudioPlayerProcessor extends AudioWorkletProcessor {
         this.port.onmessage = (event) => {
             if (event.data.type === 'enqueue') {
                 this.audioData.push(...event.data.audioSamples);
+                this.isPaused = false;
             } else if (event.data.type === 'pause') {
                 this.isPaused = true;
             } else if (event.data.type === 'resume') {
@@ -15,32 +16,35 @@ class AudioPlayerProcessor extends AudioWorkletProcessor {
             } else if (event.data.type === 'addMark') {
                 this.marks.push(event.data.markName);
             } else if (event.data.type === 'clear') {
-                this.audioData = [];
+                this.clearAllData();
             }
-
         };
+    }
+
+    clearAllData() {
+        this.audioData = []; // Clear the audio data buffer
+        this.marks = []; // Clear any pending marks
+        this.isPaused = true; // Optionally, pause processing to ensure no data is played
     }
 
     process(inputs, outputs) {
         const output = outputs[0];
-        
+
         if (this.isPaused) {
             for (let channel = 0; channel < output.length; channel++) {
-                output[channel].fill(0); // Output silence if paused
+                output[channel].fill(0); // Output silence if paused or cleared
             }
             return true;
         }
 
         for (let channel = 0; channel < output.length; channel++) {
-
             const outputData = output[channel];
             const inputData = this.audioData.splice(0, outputData.length);
 
             if (inputData.length > 0) {
                 outputData.set(inputData);
             } else {
-               // outputData.fill(0); // Output silence when no data is available
-                this.audioData = []
+                outputData.fill(0); // Output silence when no data is available
             }
         }
 

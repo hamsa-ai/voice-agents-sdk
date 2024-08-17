@@ -1,19 +1,21 @@
 {
-  "name": "hamsa-voice-agent-web",
-  "version": "1.0.0",
-  "description": "",
+  "name": "hamsa-voice-agents",
+  "version": "0.1.16",
+  "description": "Hamsa AI- Voice Agents Javascript SDK",
   "main": "src/main.js",
+  "types": "types/main.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "npx webpack && cp dist/bundle.js test/bundle.js && cp dist/bundle.js  ../hamsa-chrome/bundle.js"
+    "build": "npx tsc",
+    "prepare": "npx tsc"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Hamsa AI",
+  "license": "MIT",
   "devDependencies": {
     "babel-loader": "^9.1.3",
     "buffer": "^6.0.3",
     "css-loader": "^7.1.2",
     "style-loader": "^4.0.0",
+    "typescript": "^5.5.4",
     "webpack": "^5.91.0",
     "webpack-cli": "^5.1.4",
     "webpack-node-externals": "^3.0.0"
@@ -21,5 +23,23 @@
   "dependencies": {
     "html-minifier": "^4.0.0",
     "pako": "^2.1.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NADSoft-dev/hamsa-web-library.git"
+  },
+  "keywords": [
+    "arab",
+    "voice",
+    "agent",
+    "web",
+    "nodejs",
+    "sdk",
+    "hamsa",
+    "ai"
+  ],
+  "bugs": {
+    "url": "https://github.com/NADSoft-dev/hamsa-web-library/issues"
+  },
+  "homepage": "https://github.com/NADSoft-dev/hamsa-web-library#readme"
 }
