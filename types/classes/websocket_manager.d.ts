@@ -1,5 +1,5 @@
 export default class WebSocketManager {
-    constructor(url: any, conversationId: any, onError: any, onStart: any, onTransciprtionRecieved: any, onAnswerRecieved: any, onSpeaking: any, onListening: any, onClosed: any, voiceEnablement: any, apiKey: any);
+    constructor(url: any, conversationId: any, onError: any, onStart: any, onTransciprtionRecieved: any, onAnswerRecieved: any, onSpeaking: any, onListening: any, onClosed: any, voiceEnablement: any, tools: any, apiKey: any);
     url: string;
     ws: WebSocket;
     isConnected: boolean;
@@ -16,6 +16,7 @@ export default class WebSocketManager {
     onListeningCB: any;
     onClosedCB: any;
     voiceEnablement: any;
+    tools: any;
     apiKey: any;
     startCall(): void;
     onOpen(): void;

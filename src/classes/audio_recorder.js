@@ -1,3 +1,5 @@
+import AudioProcessor from './audio-processor.worklet.js';
+
 export default class AudioRecorder {
     constructor() {
         this.audioContext = null;
@@ -13,33 +15,33 @@ export default class AudioRecorder {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
+                    autoGainControl: false
                 },
                 video: false
             });
             
             this.audioContext = new AudioContext({ sampleRate: 16000 });
                 
-            try {
-                await this.audioContext.audioWorklet.addModule(new URL('./audio-processor.js', import.meta.url));
-            } catch (e) {
+          
+            this.audioContext.audioWorklet.addModule(AudioProcessor).then(()=>{
+                this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.mediaStream);
+                this.audioWorkletNode = new AudioWorkletNode(this.audioContext, 'audio-processor');
+        
+                // Connect the media stream source to the AudioWorkletNode
+                this.mediaStreamSource.connect(this.audioWorkletNode);
+                this.audioWorkletNode.connect(this.audioContext.destination);
+        
+                // Handle messages from the AudioWorkletProcessor
+                this.audioWorkletNode.port.onmessage = (event) => {
+                    if (this.isPaused) return; // Pause processing if needed
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify(event.data));
+                    }
+                };
+            }).catch((e) => {
                 console.error('Failed to load AudioWorklet module', e);
-            }
+            })
 
-            this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.mediaStream);
-            this.audioWorkletNode = new AudioWorkletNode(this.audioContext, 'audio-processor');
-    
-            // Connect the media stream source to the AudioWorkletNode
-            this.mediaStreamSource.connect(this.audioWorkletNode);
-            this.audioWorkletNode.connect(this.audioContext.destination);
-    
-            // Handle messages from the AudioWorkletProcessor
-            this.audioWorkletNode.port.onmessage = (event) => {
-                if (this.isPaused) return; // Pause processing if needed
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify(event.data));
-                }
-            };
         } catch (error) {
             if (error.name === 'NotAllowedError') {
                 console.error("Microphone access denied by the user.", error);

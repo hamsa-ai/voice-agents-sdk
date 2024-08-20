@@ -3,29 +3,42 @@ const path = require('path');
 module.exports = {
     entry: './src/main.js',
     output: {
-        filename: 'bundle.js',
         path: path.resolve(__dirname, 'dist'),
-        // library: 'HamsaVoiceAgent',
-        libraryTarget: 'umd',
-        globalObject: 'this'
+        filename: 'index.js',
+        library: {
+            name: 'Hamsa Voice-Agents SDK',
+            type: 'umd',  // UMD ensures compatibility across environments
+        },
+        globalObject: 'this',
+        umdNamedDefine: true
     },
+    target: 'web',  // 'web' should cover most browser-based environments
     module: {
-        rules: [
+        rules: [   
+            {
+                test: /\.worklet\.js/,
+                loader: "audio-worklet-loader",
+                options: {
+                    inline: "no-fallback",
+                }
+            },                
             {
                 test: /\.js$/,
                 exclude: /node_modules/,
-                use: {
-                    loader: 'babel-loader'
-                }
+                use: 'babel-loader',
             },
             {
                 test: /\.css$/,
-                use: ['style-loader', 'css-loader']
-            }
+                use: ['style-loader', 'css-loader'],
+            },     
         ]
     },
     resolve: {
-        extensions: ['.js']
+        extensions: ['.js'],
+        fallback: {
+            "events": require.resolve("events/")
+        }
     },
-    mode: 'development'
+    mode: 'production',
+    externals: [],  // Define any external dependencies that should not be bundled
 };

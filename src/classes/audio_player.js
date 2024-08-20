@@ -1,34 +1,38 @@
 import { Buffer } from 'buffer';
- 
+import AudioPlayerProcessor from './audio-player-processor.worklet.js';
+
 export default class AudioPlayer {
     constructor(ws, onSpeaking, onListening) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        this.audioContext = new AudioContext({ sampleRate: 17500 });
+        this.audioContext = new AudioContext({ sampleRate: 16000 });
         this.ws = ws;
         this.isPaused = false; // Added a flag to keep track of pause state
         this.onSpeakingCB = onSpeaking;   
         this.onListeningCB = onListening;
-
+        this.isPlaying = false;
         this.initAudioWorklet();
     }
 
     async initAudioWorklet() {
-        await this.audioContext.audioWorklet.addModule(new URL('./audio-player-processor.js', import.meta.url));
-        this.processor = new AudioWorkletNode(this.audioContext, 'audio-player-processor');
-
-        this.processor.port.onmessage = (event) => {
-            if (event.data.type === 'mark') {
-                this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'WEBSDK', mark: { name: event.data.markName } }));
-            }
-        };
-
-        this.processor.connect(this.audioContext.destination);
+        this.audioContext.audioWorklet.addModule(AudioPlayerProcessor).then(() => {
+            this.processor = new AudioWorkletNode(this.audioContext, 'audio-player-processor');
+            this.processor.port.onmessage = (event) => {
+                if (event.data.type === 'mark') {
+                    this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'WEBSDK', mark: { name: event.data.markName } }));
+                } else if (event.data.type === 'finished') {
+                    this.updatePlayingState(false);
+                }
+            };
+    
+            this.processor.connect(this.audioContext.destination);
+        })
     }
 
     enqueueAudio(base64Data) {
         const binaryData = Buffer.from(base64Data, 'base64');
         const audioSamples = this.pcm16ToFloat32(binaryData);
         this.processor.port.postMessage({ type: 'enqueue', audioSamples });
+        this.updatePlayingState(true);
     }
 
     pause() {
@@ -43,7 +47,7 @@ export default class AudioPlayer {
 
     stopAndClear() {
         this.processor.port.postMessage({ type: 'clear' });
-        if (this.onListeningCB) this.onListeningCB()
+        this.updatePlayingState(false);        
     }
 
     addMark(markName) {
@@ -61,4 +65,14 @@ export default class AudioPlayer {
 
         return float32Array;
     }
+
+    updatePlayingState(isPlaying) {
+        if (isPlaying && !this.isPlaying) {
+            this.isPlaying = true;
+            if (this.onSpeakingCB) this.onSpeakingCB(); // Trigger the speaking callback
+        } else if (!isPlaying && this.isPlaying) {
+            this.isPlaying = false;
+            if (this.onListeningCB) this.onListeningCB(); // Trigger the listening callback
+        }
+    }    
 }

@@ -13,6 +13,7 @@ export default class WebSocketManager {
          onListening,
          onClosed,
          voiceEnablement,
+         tools,
          apiKey
     ) {
         this.url = `${url}/${conversationId}?api_key=${apiKey}`;
@@ -31,6 +32,7 @@ export default class WebSocketManager {
         this.onListeningCB = onListening;
         this.onClosedCB = onClosed;
         this.voiceEnablement = voiceEnablement;
+        this.tools = tools;
         this.apiKey = apiKey;
     }
 
@@ -87,6 +89,7 @@ export default class WebSocketManager {
     }
 
     onClose(event) {
+        if (this.onClosedCB) this.onClosedCB()
         this.audioPlayer.stopAndClear();
         this.audioRecorder.stop();
         this.isConnected = false;
@@ -95,6 +98,7 @@ export default class WebSocketManager {
 
     onError(error) {
         if (this.onErrorCB) this.onErrorCB(error)
+            
     }
 
     endCall() {
@@ -119,13 +123,13 @@ export default class WebSocketManager {
 
     run_tools(tools_array) {
         const results = [];
-    
         tools_array.forEach(item => {
             if (item.type === 'function') {
+                const selected_function = this.#findFunctionByName(item.function.name)
                 const functionName = item.function.name;
                 const functionArgs = JSON.parse(item.function.arguments);
-                if (typeof window[functionName] === 'function') {
-                    const response = window[functionName](...Object.values(functionArgs));
+                if (selected_function && typeof selected_function["fn"] === 'function') {
+                    const response = selected_function["fn"](...Object.values(functionArgs));
                     results.push({
                         id: item.id,
                         function: {
@@ -148,6 +152,11 @@ export default class WebSocketManager {
     
         return results;
     }
+
+    #findFunctionByName(functionName) {
+        return this.tools.find(item => item.function_name === functionName) || null;
+    }
+
     #closeWebSocket() {
         if (this.ws.readyState === WebSocket.OPEN) {
             this.ws.close(1000, 'Normal Closure');

@@ -4,10 +4,11 @@ export class HamsaVoiceAgent extends EventEmitter<[never]> {
     apiKey: any;
     API_URL: string;
     WS_URL: string;
-    start({ agentId, params, voiceEnablement }: {
+    start({ agentId, params, voiceEnablement, tools }: {
         agentId?: any;
         params?: {};
         voiceEnablement?: boolean;
+        tools?: any[];
     }): Promise<void>;
     end(): void;
     pause(): void;
