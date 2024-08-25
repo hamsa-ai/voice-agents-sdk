@@ -6,8 +6,8 @@ export class HamsaVoiceAgent extends EventEmitter {
         super();
         this.webSocketManager = null;
         this.apiKey = apiKey;
-        this.API_URL = "https://api.tryhamsa.com/api"
-        this.WS_URL = "wss://bots-dev.tryhamsa.com/stream"
+        this.API_URL = "https://api.tryhamsa.com"
+        this.WS_URL = "wss://bots.tryhamsa.com/stream"
     }
 
     async start({

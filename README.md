@@ -7,7 +7,7 @@ Hamsa Voice Agents Web SDK is a JavaScript library for integrating voice agents 
 Install the SDK via npm:
 
 ```bash
-npm install hamsa-voice-agents
+npm i @hamsa-ai/voice-agents-sdk
 ```
 
 ## Usage
@@ -19,7 +19,7 @@ import { HamsaVoiceAgent } from 'hamsa-voice-agents';
 ```
 
 Initialize the SDK with your API key. 
-To obtain your first API key, visit https://dashboard.tryhamsa.com:
+To obtain your first API key, visit https://dashboard.tryhamsa.com
 
 ```javascript
 const agent = new HamsaVoiceAgent(API_KEY);
