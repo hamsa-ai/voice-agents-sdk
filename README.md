@@ -1,31 +1,33 @@
-# Hamsa Voice Agent Web SDK
+# Hamsa Voice Agents Web SDK
 
-Hamsa Voice Agent Web SDK is a JavaScript library for running voice agent from https://dashboard.tryhamsa.com. This SDK provides a seamless way to integrate voice interactions into your web applications.
-
+Hamsa Voice Agents Web SDK is a JavaScript library for integrating voice agents from https://dashboard.tryhamsa.com. This SDK provides a seamless way to incorporate voice interactions into your web applications.
 
 ## Installation
-You can install the SDK via npm:
+
+Install the SDK via npm:
 
 ```bash
 npm install hamsa-voice-agents
 ```
+
 ## Usage
 
-You should first import the package in your code
+First, import the package in your code:
 
 ```javascript
 import { HamsaVoiceAgent } from 'hamsa-voice-agents';
 ```
 
-After importing the package, you need to initialize it with your API_KEY. To get your first API_KEY visit https://dashboard.tryhamsa.com
+Initialize the SDK with your API key. 
+To obtain your first API key, visit https://dashboard.tryhamsa.com:
 
 ```javascript
 const agent = new HamsaVoiceAgent(API_KEY);
 ```
 
-## Start a conversation with exsiting agent
+## Start a Conversation with an Existing Agent
 
-You can easily start a conversation with existing agent by calling "start" function, You can create a new agent and manage your agents in our Dashboard, or using our API see: https://docs.tryhamsa.com
+Start a conversation with an existing agent by calling the "start" function. You can create and manage agents in our Dashboard or using our API (see: https://docs.tryhamsa.com):
 
 ```javascript
 agent.start({
@@ -34,61 +36,63 @@ agent.start({
         param1: "NAME",
         param2: "NAME2"
     }
-})
+});
 ```
 
-When you create an agent, you can add params to your pre-defined values, for example you can set your Greeting Message to: "Hello {{name}}, how can I help you today?" and you pass the "name" as a parameter to override it and say the correct name of the user.
+When creating an agent, you can add parameters to your pre-defined values. For example, you can set your Greeting Message to: "Hello {{name}}, how can I help you today?" and pass the "name" as a parameter to use the correct name of the user.
 
-## Pause/Resume a conversation
+## Pause/Resume a Conversation
 
-If you want to pause the conversation, you can call "pause" function, this will block the SDK from sending or recieving new data, until you resume the conversation.
+To pause the conversation, call the "pause" function. This will prevent the SDK from sending or receiving new data until you resume the conversation:
 
 ```javascript
-agent.pause()
+agent.pause();
 ```
 
+To resume the conversation:
+
 ```javascript
-agent.resume()
+agent.resume();
 ```
 
-## End a conversation
+## End a Conversation
 
-To end a conversation you simply call "end" function.
+To end a conversation, simply call the "end" function:
 
 ```javascript
-agent.end()
+agent.end();
 ```
 
 ## Events
 
-During the conversation the SDK emits events to update your application about the conversation status.
+During the conversation, the SDK emits events to update your application about the conversation status.
 
-### Conversation status events
+### Conversation Status Events
 
 ```javascript
-agent.on("callStarted", () => { console.log("Conversation has started!") })
-agent.on("callEnded", () => { console.log("Conversation has ended!") })
-agent.on("callPaused", () => { console.log("The conversation is paused") })
-agent.on("callResumes", () => { console.log("Conversation has resumed") })
+agent.on("callStarted", () => { console.log("Conversation has started!"); });
+agent.on("callEnded", () => { console.log("Conversation has ended!"); });
+agent.on("callPaused", () => { console.log("The conversation is paused"); });
+agent.on("callResumed", () => { console.log("Conversation has resumed"); });
 ```
 
-### Agent Status events
+### Agent Status Events
 
 ```javascript
-agent.on("speaking", () => { console.log("The agent is speaking") })
-agent.on("listening", () => { console.log("The agent is listening") })
+agent.on("speaking", () => { console.log("The agent is speaking"); });
+agent.on("listening", () => { console.log("The agent is listening"); });
 ```
 
-### Conversation script events
+### Conversation Script Events
 
 ```javascript
-agent.on("transcriptionReceived", (text) => { console.log("User speech transcription recieved", text) })
-agent.on("answerReceived", (text) => { console.log("Agent answer received", text) })
+agent.on("transcriptionReceived", (text) => { console.log("User speech transcription received", text); });
+agent.on("answerReceived", (text) => { console.log("Agent answer received", text); });
 ```
 
-### Error events
+### Error Events
 
 ```javascript
-agent.on("close", () => { console.log("Conversation was closed") })
-agent.on("error", (e) => { console.log("Error was received", e) })
+agent.on("closed", () => { console.log("Conversation was closed"); });
+agent.on("error", (e) => { console.log("Error was received", e); });
 ```
