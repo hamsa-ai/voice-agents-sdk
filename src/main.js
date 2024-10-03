@@ -10,6 +10,10 @@ export class HamsaVoiceAgent extends EventEmitter {
         this.WS_URL = "wss://bots.tryhamsa.com/stream"
     }
 
+	setVolume(volume) {
+		this.webSocketManager.setVolume(volume);
+    }
+
     async start({
         agentId = null,
         params = {},
@@ -50,12 +54,12 @@ export class HamsaVoiceAgent extends EventEmitter {
 
     pause() {
         this.webSocketManager.pauseCall();
-        this.emit('callPaused');
+		this.emit('callPaused');
     }
 
     resume() {
         this.webSocketManager.resumeCall();
-        this.emit('callResumed');
+		this.emit('callResumed');
     }
     
     async #init_conversation(voiceAgentId, params, voiceEnablement, tools) {

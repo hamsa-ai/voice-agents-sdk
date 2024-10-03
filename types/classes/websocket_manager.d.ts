@@ -18,6 +18,7 @@ export default class WebSocketManager {
     voiceEnablement: any;
     tools: any;
     apiKey: any;
+    setVolume(volume: any): void;
     startCall(): void;
     onOpen(): void;
     onMessage(event: any): void;
