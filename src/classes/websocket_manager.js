@@ -34,6 +34,11 @@ export default class WebSocketManager {
         this.voiceEnablement = voiceEnablement;
         this.tools = tools;
         this.apiKey = apiKey;
+        this.setVolume = this.setVolume.bind(this);
+	}
+
+	setVolume(volume) {
+		this.audioPlayer.setVolume(volume);
     }
 
     startCall() {
@@ -47,8 +52,8 @@ export default class WebSocketManager {
                 this.audioPlayer = new AudioPlayer(this.ws, this.onSpeakingCB, this.onListeningCB)
                 this.audioRecorder = new AudioRecorder() 
             }  
-        }catch(e) {
-            console.log(e)
+		}catch(e) {
+			console.log(e)
         }
     }
 

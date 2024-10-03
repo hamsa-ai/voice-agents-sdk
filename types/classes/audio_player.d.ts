@@ -6,6 +6,7 @@ export default class AudioPlayer {
     onSpeakingCB: any;
     onListeningCB: any;
     isPlaying: boolean;
+    gainNode: any;
     initAudioWorklet(): Promise<void>;
     processor: AudioWorkletNode;
     enqueueAudio(base64Data: any): void;
@@ -15,4 +16,5 @@ export default class AudioPlayer {
     addMark(markName: any): void;
     pcm16ToFloat32(pcm16Array: any): Float32Array;
     updatePlayingState(isPlaying: any): void;
+    setVolume(volume: any): void;
 }
