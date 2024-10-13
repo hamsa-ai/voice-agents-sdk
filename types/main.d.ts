@@ -4,7 +4,8 @@ export class HamsaVoiceAgent extends EventEmitter<[never]> {
     apiKey: any;
     API_URL: string;
     WS_URL: string;
-    start({ agentId, params, voiceEnablement, tools }: {
+    setVolume(volume: any): void;
+    start({ agentId, params, voiceEnablement, tools, }: {
         agentId?: any;
         params?: {};
         voiceEnablement?: boolean;
@@ -15,5 +16,5 @@ export class HamsaVoiceAgent extends EventEmitter<[never]> {
     resume(): void;
     #private;
 }
-import { EventEmitter } from 'events';
-import WebSocketManager from './classes/websocket_manager';
+import { EventEmitter } from "events";
+import WebSocketManager from "./classes/websocket_manager";

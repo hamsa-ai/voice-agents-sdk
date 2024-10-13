@@ -10,22 +10,40 @@ export default class AudioPlayer {
         this.onSpeakingCB = onSpeaking;   
         this.onListeningCB = onListening;
         this.isPlaying = false;
+
+		// Create a gain node for volume control
+		this.gainNode = this.audioContext.createGain();
+		this.gainNode.gain.value = 1.0; // Set default volume to 100%
+		this.gainNode.connect(this.audioContext.destination); // Connect gain node to speakers
+
         this.initAudioWorklet();
     }
 
     async initAudioWorklet() {
-        this.audioContext.audioWorklet.addModule(AudioPlayerProcessor).then(() => {
-            this.processor = new AudioWorkletNode(this.audioContext, 'audio-player-processor');
+		this.audioContext.audioWorklet
+			.addModule(AudioPlayerProcessor)
+			.then(() => {
+				this.processor = new AudioWorkletNode(
+					this.audioContext,
+					"audio-player-processor"
+				);
             this.processor.port.onmessage = (event) => {
-                if (event.data.type === 'mark') {
-                    this.ws.send(JSON.stringify({ event: 'mark', streamSid: 'WEBSDK', mark: { name: event.data.markName } }));
-                } else if (event.data.type === 'finished') {
+					if (event.data.type === "mark") {
+						this.ws.send(
+							JSON.stringify({
+								event: "mark",
+								streamSid: "WEBSDK",
+								mark: { name: event.data.markName },
+							})
+						);
+					} else if (event.data.type === "finished") {
                     this.updatePlayingState(false);
                 }
             };
     
-            this.processor.connect(this.audioContext.destination);
-        })
+				// Connect processor to the gain node instead of directly to the destination
+				this.processor.connect(this.gainNode);
+			});
     }
 
     enqueueAudio(base64Data) {
@@ -74,5 +92,14 @@ export default class AudioPlayer {
             this.isPlaying = false;
             if (this.onListeningCB) this.onListeningCB(); // Trigger the listening callback
         }
+    }    
+
+	// New method to set volume
+	setVolume(volume) {
+		const clampedVolume = Math.min(1.0, Math.max(0.0, volume)); // Clamp volume between 0.0 and 1.0
+		this.gainNode.gain.setValueAtTime(
+			clampedVolume,
+			this.audioContext.currentTime
+		);
     }    
 }
