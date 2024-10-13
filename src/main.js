@@ -21,10 +21,14 @@ export class HamsaVoiceAgent extends EventEmitter {
         tools = []
     }) {
         try {
-        const conversationdId = await this.#init_conversation(agentId, params, voiceEnablement, tools);
+            const conversationId = await this.#init_conversation(agentId, params, voiceEnablement, tools);
+            if (!conversationId) {
+                throw new Error("Failed to initialize conversation.");
+            }
+            this.jobId = conversationId; // Store the jobId         
         this.webSocketManager = new WebSocketManager(
             this.WS_URL,
-            conversationdId,
+            conversationId,
             (error) => this.emit('error', error),
             () => this.emit('start'),
             (transcription) => this.emit('transcriptionReceived', transcription),
@@ -62,6 +66,57 @@ export class HamsaVoiceAgent extends EventEmitter {
 		this.emit('callResumed');
     }
     
+    /**
+     * Retrieves job details from the Hamsa API using the stored jobId.
+     * Implements retry logic with exponential backoff.
+     * @param {number} [maxRetries=5] - Maximum number of retry attempts.
+     * @param {number} [initialRetryInterval=1000] - Initial delay between retries in milliseconds.
+     * @param {number} [backoffFactor=2] - Factor by which the retry interval increases each attempt.
+     * @returns {Promise<Object>} Job details object.
+     */
+    async getJobDetails(maxRetries = 5, initialRetryInterval = 1000, backoffFactor = 2) {
+        if (!this.jobId) {
+            throw new Error("Cannot fetch job details: jobId is not set. Start a conversation first.");
+        }
+
+        const url = `${this.API_URL}/v1/job`;
+        const headers = {
+            "Authorization": `Token ${this.apiKey}`,
+            "Content-Type": "application/json"
+        };
+        const params = new URLSearchParams({ jobId: this.jobId });
+
+        let currentInterval = initialRetryInterval;
+
+        const fetchJobDetails = async (attempt = 1) => {
+            try {
+                const response = await fetch(`${url}?${params.toString()}`, { method: 'GET', headers });
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+                }
+                const data = await response.json();
+                // check if the message is COMPLETED in the data to decide if we should retry
+                if (data.message === "COMPLETED") {
+                    return data;
+                } else {
+                    throw new Error(`Job status is not COMPLETED: ${data.message}`);
+                }
+            } catch (error) {
+                if (attempt < maxRetries) {
+                    console.warn(`Attempt ${attempt} failed: ${error.message}. Retrying in ${currentInterval / 1000} seconds...`);
+                    await this.#delay(currentInterval); // Wait before retrying
+                    currentInterval *= backoffFactor; // Increase the interval
+                    return fetchJobDetails(attempt + 1);
+                } else {
+                    throw new Error(`Failed to fetch job details after ${maxRetries} attempts: ${error.message}`);
+                }
+            }
+        };
+
+        return fetchJobDetails();
+    }
+    
     async #init_conversation(voiceAgentId, params, voiceEnablement, tools) {
         const headers = {
             "Authorization": `Token ${this.apiKey}`,
@@ -84,8 +139,8 @@ export class HamsaVoiceAgent extends EventEmitter {
           
           try {
             const response = await fetch(`${this.API_URL}/v1/voice-agents/conversation-init`, requestOptions);
-            const result = await response.json();
-            return result["data"]["jobId"]
+                        const result = await response.json();
+                            return result["data"]["jobId"]
           } catch (error) {
             this.emit('error', new Error("Error in initializing the call. Please double-check your API_KEY and ensure you have sufficient funds in your balance."));
           };
@@ -110,6 +165,14 @@ export class HamsaVoiceAgent extends EventEmitter {
                 }
             }
         }));
+    }
+    /**
+     * Delays execution for a specified amount of time.
+     * @param {number} ms - Milliseconds to delay.
+     * @returns {Promise} Promise that resolves after the delay.
+     */
+    #delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
