@@ -1,6 +1,6 @@
 # Hamsa Voice Agents Web SDK
 
-Hamsa Voice Agents Web SDK is a JavaScript library for integrating voice agents from https://dashboard.tryhamsa.com. This SDK provides a seamless way to incorporate voice interactions into your web applications.
+Hamsa Voice Agents Web SDK is a JavaScript library for integrating voice agents from <https://dashboard.tryhamsa.com>. This SDK provides a seamless way to incorporate voice interactions into your web applications.
 
 ## Installation
 
@@ -15,11 +15,11 @@ npm i @hamsa-ai/voice-agents-sdk
 First, import the package in your code:
 
 ```javascript
-import { HamsaVoiceAgent } from 'hamsa-voice-agents';
+import { HamsaVoiceAgent } from '@hamsa-ai/voice-agents-sdk'
 ```
 
-Initialize the SDK with your API key. 
-To obtain your first API key, visit https://dashboard.tryhamsa.com
+Initialize the SDK with your API key.
+To obtain your first API key, visit <https://dashboard.tryhamsa.com>
 
 ```javascript
 const agent = new HamsaVoiceAgent(API_KEY);
@@ -27,7 +27,7 @@ const agent = new HamsaVoiceAgent(API_KEY);
 
 ## Start a Conversation with an Existing Agent
 
-Start a conversation with an existing agent by calling the "start" function. You can create and manage agents in our Dashboard or using our API (see: https://docs.tryhamsa.com):
+Start a conversation with an existing agent by calling the "start" function. You can create and manage agents in our Dashboard or using our API (see: <https://docs.tryhamsa.com>):
 
 ```javascript
 agent.start({
