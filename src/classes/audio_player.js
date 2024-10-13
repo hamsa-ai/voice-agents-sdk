@@ -94,7 +94,6 @@ export default class AudioPlayer {
         }
     }    
 
-	// New method to set volume
 	setVolume(volume) {
 		const clampedVolume = Math.min(1.0, Math.max(0.0, volume)); // Clamp volume between 0.0 and 1.0
 		this.gainNode.gain.setValueAtTime(
