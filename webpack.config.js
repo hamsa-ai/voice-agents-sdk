@@ -1,22 +1,12 @@
 const path = require('path');
 
-module.exports = {
+const commonConfig = {
     entry: './src/main.js',
-    output: {
-        path: path.resolve(__dirname, 'dist'),
-        filename: 'index.js',
-        library: {
-            name: 'Hamsa Voice-Agents SDK',
-            type: 'umd',  // UMD ensures compatibility across environments
-        },
-        globalObject: 'this',
-        umdNamedDefine: true
-    },
-    target: 'web',  // 'web' should cover most browser-based environments
+    target: 'web',  // 'web' covers most browser-based environments
     module: {
         rules: [   
             {
-                test: /\.worklet\.js/,
+                test: /\.worklet\.js$/,
                 loader: "audio-worklet-loader",
                 options: {
                     inline: "no-fallback",
@@ -42,3 +32,61 @@ module.exports = {
     mode: 'production',
     externals: [],  // Define any external dependencies that should not be bundled
 };
+
+// UMD Configuration
+const umdConfig = {
+    ...commonConfig,
+    output: {
+        path: path.resolve(__dirname, 'dist'),
+        filename: 'index.umd.js',
+        library: {
+            name: 'Hamsa Voice-Agents SDK',
+            type: 'umd',  // UMD ensures compatibility across environments
+        },
+        globalObject: 'this',
+        umdNamedDefine: true
+    },
+};
+
+// ESM Configuration
+const esmConfig = {
+    ...commonConfig,
+    output: {
+        path: path.resolve(__dirname, 'dist'),
+        filename: 'index.esm.js',
+        library: {
+            type: 'module',
+        },
+    },
+    experiments: {
+        outputModule: true,
+    },
+    // Ensure that webpack emits ESM-compatible code
+    experiments: {
+        outputModule: true,
+    },
+    // If needed, adjust other settings specific to ESM
+    externals: {
+        // Specify externals as needed for ESM
+    },
+    // Note: You might need to adjust `package.json` to include `"type": "module"`
+};
+
+// CJS Configuration
+const cjsConfig = {
+    ...commonConfig,
+    output: {
+        path: path.resolve(__dirname, 'dist'),
+        filename: 'index.cjs.js',
+        library: {
+            type: 'commonjs2',
+        },
+    },
+    // If needed, adjust settings specific to CJS
+    externals: {
+        // Specify externals as needed for CJS
+    },
+};
+
+// Export all configurations as an array
+module.exports = [umdConfig, esmConfig, cjsConfig];
