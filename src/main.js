@@ -6,14 +6,25 @@ export class HamsaVoiceAgent extends EventEmitter {
         super();
         this.webSocketManager = null;
         this.apiKey = apiKey;
-        this.API_URL = "https://api.tryhamsa.com"
-        this.WS_URL = "wss://bots.tryhamsa.com/stream"
+        this.API_URL = "https://api.tryhamsa.com";
+        this.WS_URL = "wss://bots.tryhamsa.com/stream";
+        this.jobId = null;
     }
 
-	setVolume(volume) {
-		this.webSocketManager.setVolume(volume);
+    /**
+     * Sets the volume for the audio playback.
+     * @param {number} volume - Volume level between 0.0 and 1.0.
+     */
+    setVolume(volume) {
+        if (this.webSocketManager) {
+            this.webSocketManager.setVolume(volume);
+        }
     }
 
+    /**
+     * Starts a new voice agent call.
+     * @param {object} options - Configuration options for the call.
+     */
     async start({
         agentId = null,
         params = {},
@@ -25,45 +36,64 @@ export class HamsaVoiceAgent extends EventEmitter {
             if (!conversationId) {
                 throw new Error("Failed to initialize conversation.");
             }
-            this.jobId = conversationId; // Store the jobId         
-        this.webSocketManager = new WebSocketManager(
-            this.WS_URL,
-            conversationId,
-            (error) => this.emit('error', error),
-            () => this.emit('start'),
-            (transcription) => this.emit('transcriptionReceived', transcription),
-            (answer) => this.emit('answerReceived', answer),
-            () => this.emit('speaking'),
-            () => this.emit('listening'),
-            () => this.emit('closed'),
-            voiceEnablement,
-            tools,
-            this.apiKey
-        );
-        this.webSocketManager.startCall();
-        this.emit('callStarted');
+            this.jobId = conversationId; // Store the jobId
+
+            this.webSocketManager = new WebSocketManager(
+                this.WS_URL,
+                conversationId,
+                (error) => this.emit('error', error),               // onError
+                () => this.emit('start'),                            // onStart
+                (transcription) => this.emit('transcriptionReceived', transcription), // onTranscriptionReceived
+                (answer) => this.emit('answerReceived', answer),     // onAnswerReceived
+                () => this.emit('speaking'),                         // onSpeaking
+                () => this.emit('listening'),                        // onListening
+                () => this.emit('closed'),                           // onClosed
+                voiceEnablement,
+                tools,
+                this.apiKey,
+                (remoteStream) => this.emit('remoteAudioStreamAvailable', remoteStream), // onRemoteStreamAvailable
+                (localStream) => this.emit('localAudioStreamAvailable', localStream)    // onLocalStreamAvailable
+            );
+
+            this.webSocketManager.startCall();
+            this.emit('callStarted');
         } catch (e) {
             this.emit('error', new Error("Error in starting the call! Make sure you initialized the client with init()."));
         }
     }
 
+    /**
+     * Ends the current voice agent call.
+     */
     end() {
         try {
-            this.webSocketManager.endCall();
-            this.emit('callEnded');
+            if (this.webSocketManager) {
+                this.webSocketManager.endCall();
+                this.emit('callEnded');
+            }
         } catch (e) {
             this.emit('error', new Error("Error in ending the call! Make sure you initialized the client with init()."));
         }
     }
 
+    /**
+     * Pauses the current voice agent call.
+     */
     pause() {
-        this.webSocketManager.pauseCall();
-		this.emit('callPaused');
+        if (this.webSocketManager) {
+            this.webSocketManager.pauseCall();
+            this.emit('callPaused');
+        }
     }
 
+    /**
+     * Resumes the paused voice agent call.
+     */
     resume() {
-        this.webSocketManager.resumeCall();
-		this.emit('callResumed');
+        if (this.webSocketManager) {
+            this.webSocketManager.resumeCall();
+            this.emit('callResumed');
+        }
     }
     
     /**
@@ -117,35 +147,51 @@ export class HamsaVoiceAgent extends EventEmitter {
         return fetchJobDetails();
     }
     
+    /**
+     * Initializes a conversation with the Hamsa API.
+     * @private
+     * @param {string|null} voiceAgentId - The voice agent ID.
+     * @param {object} params - Additional parameters.
+     * @param {boolean} voiceEnablement - Flag to enable voice features.
+     * @param {Array} tools - Array of tools/functions to be used.
+     * @returns {Promise<string|null>} The conversation jobId or null if failed.
+     */
     async #init_conversation(voiceAgentId, params, voiceEnablement, tools) {
         const headers = {
             "Authorization": `Token ${this.apiKey}`,
             "Content-Type": "application/json"
-        }
-        const llmtools = (voiceEnablement && tools) ? this.#convertToolsToLLMTools(tools) : []
+        };
+        const llmtools = (voiceEnablement && tools) ? this.#convertToolsToLLMTools(tools) : [];
         const body = {
             voiceAgentId,
             params,
             voiceEnablement,
             tools: llmtools
-        }
+        };
 
         const requestOptions = {
             method: "POST",
             headers: headers,
             body: JSON.stringify(body),
             redirect: "follow"
-          };
-          
-          try {
+        };
+        
+        try {
             const response = await fetch(`${this.API_URL}/v1/voice-agents/conversation-init`, requestOptions);
-                        const result = await response.json();
-                            return result["data"]["jobId"]
-          } catch (error) {
+            const result = await response.json();
+            return result["data"]["jobId"];
+        } catch (error) {
             this.emit('error', new Error("Error in initializing the call. Please double-check your API_KEY and ensure you have sufficient funds in your balance."));
-          };
+            return null;
+        }
     }
 
+    /**
+     * Converts tools to LLMTools format.
+     * @private
+     * @param {Array} tools - Array of tool objects.
+     * @returns {Array} Array of LLMTool objects.
+     */
     #convertToolsToLLMTools(tools) {
         return tools.map(item => ({
             type: "function",
@@ -166,8 +212,10 @@ export class HamsaVoiceAgent extends EventEmitter {
             }
         }));
     }
+
     /**
      * Delays execution for a specified amount of time.
+     * @private
      * @param {number} ms - Milliseconds to delay.
      * @returns {Promise} Promise that resolves after the delay.
      */

@@ -1,12 +1,29 @@
 {
   "name": "@hamsa-ai/voice-agents-sdk",
-  "version": "0.1.0",
-  "description": "Hamsa AI- Voice Agents Javascript SDK",
-  "main": "dist/index.js",
+  "version": "0.2.0",
+  "description": "Hamsa AI - Voice Agents JavaScript SDK",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.js",
+  "browser": "dist/index.umd.js",
   "types": "types/main.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.cjs.js",
+      "browser": "./dist/index.umd.js"
+    }
+  },
+  "files": [
+    "dist",
+    "types",
+    "README.md"
+  ],
   "scripts": {
-    "build": "npm install",
-    "prepare": "npx tsc && npx webpack"
+    "clean": "rimraf dist types",
+    "build:types": "tsc",
+    "build:webpack": "webpack --config webpack.config.js",
+    "build": "npm run clean && npm run build:types && npm run build:webpack",
+    "prepare": "npm run build"
   },
   "author": "Hamsa AI Inc.",
   "license": "MIT",
@@ -16,6 +33,7 @@
     "buffer": "^6.0.3",
     "css-loader": "^7.1.2",
     "file-loader": "^6.2.0",
+    "rimraf": "^6.0.1",
     "style-loader": "^4.0.0",
     "typescript": "^5.5.4",
     "webpack": "^5.91.0",
