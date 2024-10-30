@@ -4,16 +4,28 @@ export class HamsaVoiceAgent extends EventEmitter<[never]> {
     apiKey: any;
     API_URL: string;
     WS_URL: string;
-    setVolume(volume: any): void;
-    start({ agentId, params, voiceEnablement, tools }?: {
-        agentId?: any;
-        params?: {};
-        voiceEnablement?: boolean;
-        tools?: any[];
-    }): Promise<void>;
-    jobId: any;
+    jobId: string;
+    /**
+     * Sets the volume for the audio playback.
+     * @param {number} volume - Volume level between 0.0 and 1.0.
+     */
+    setVolume(volume: number): void;
+    /**
+     * Starts a new voice agent call.
+     * @param {object} options - Configuration options for the call.
+     */
+    start({ agentId, params, voiceEnablement, tools }: object): Promise<void>;
+    /**
+     * Ends the current voice agent call.
+     */
     end(): void;
+    /**
+     * Pauses the current voice agent call.
+     */
     pause(): void;
+    /**
+     * Resumes the paused voice agent call.
+     */
     resume(): void;
     /**
      * Retrieves job details from the Hamsa API using the stored jobId.
