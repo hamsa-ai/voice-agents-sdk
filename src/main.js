@@ -6,7 +6,7 @@ export class HamsaVoiceAgent extends EventEmitter {
         super();
         this.webSocketManager = null;
         this.apiKey = apiKey;
-        this.API_URL = "https://api.tryhamsa.com";
+        this.API_URL = "http://hamsa-new-606901899.eu-west-1.elb.amazonaws.com";
         this.WS_URL = "wss://bots.tryhamsa.com/stream";
         this.jobId = null;
     }
