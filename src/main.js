@@ -158,7 +158,7 @@ export class HamsaVoiceAgent extends EventEmitter {
      */
     async #init_conversation(voiceAgentId, params, voiceEnablement, tools) {
         const headers = {
-            "Authorization": `Token ${this.apiKey}`,
+            "x-agent": voiceAgentId,
             "Content-Type": "application/json"
         };
         const llmtools = (voiceEnablement && tools) ? this.#convertToolsToLLMTools(tools) : [];
@@ -223,4 +223,3 @@ export class HamsaVoiceAgent extends EventEmitter {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
-
