@@ -12,11 +12,11 @@ export default class WebSocketManager {
      * @param {function} onClosed - Callback when the WebSocket is closed.
      * @param {boolean} voiceEnablement - Flag to enable voice features.
      * @param {Array} tools - Array of tools/functions to be used.
-     * @param {string} apiKey - API key for authentication.
+     * @param {string} voiceAgentId - Voice agent ID for authentication.
      * @param {function} onRemoteStreamAvailable - Callback when remote MediaStream is available.
      * @param {function} onLocalStreamAvailable - Callback when local MediaStream is available.
      */
-    constructor(url: string, conversationId: string, onError: Function, onStart: Function, onTranscriptionReceived: Function, onAnswerReceived: Function, onSpeaking: Function, onListening: Function, onClosed: Function, voiceEnablement: boolean, tools: any[], apiKey: string, onRemoteStreamAvailable: Function, onLocalStreamAvailable: Function);
+    constructor(url: string, conversationId: string, onError: Function, onStart: Function, onTranscriptionReceived: Function, onAnswerReceived: Function, onSpeaking: Function, onListening: Function, onClosed: Function, voiceEnablement: boolean, tools: any[], voiceAgentId: string, onRemoteStreamAvailable: Function, onLocalStreamAvailable: Function);
     url: string;
     ws: WebSocket;
     isConnected: boolean;
@@ -34,7 +34,6 @@ export default class WebSocketManager {
     onClosedCB: Function;
     voiceEnablement: boolean;
     tools: any[];
-    apiKey: string;
     onRemoteStreamAvailable: Function;
     onLocalStreamAvailable: Function;
     /**

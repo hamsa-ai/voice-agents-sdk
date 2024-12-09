@@ -15,7 +15,7 @@ export default class WebSocketManager {
      * @param {function} onClosed - Callback when the WebSocket is closed.
      * @param {boolean} voiceEnablement - Flag to enable voice features.
      * @param {Array} tools - Array of tools/functions to be used.
-     * @param {string} apiKey - API key for authentication.
+     * @param {string} voiceAgentId - Voice agent ID for authentication.
      * @param {function} onRemoteStreamAvailable - Callback when remote MediaStream is available.
      * @param {function} onLocalStreamAvailable - Callback when local MediaStream is available.
      */
@@ -31,11 +31,11 @@ export default class WebSocketManager {
         onClosed,
         voiceEnablement,
         tools,
-        apiKey,
+        voiceAgentId,
         onRemoteStreamAvailable,
         onLocalStreamAvailable 
     ) {
-        this.url = `${url}/${conversationId}?api_key=${apiKey}`;
+        this.url = `${url}/${conversationId}?voice_agent_id=${voiceAgentId}`;
         this.ws = null;
         this.isConnected = false;
         this.audioPlayer = null;
@@ -52,7 +52,6 @@ export default class WebSocketManager {
         this.onClosedCB = onClosed;
         this.voiceEnablement = voiceEnablement;
         this.tools = tools;
-        this.apiKey = apiKey;
         this.onRemoteStreamAvailable = onRemoteStreamAvailable;
         this.onLocalStreamAvailable = onLocalStreamAvailable;
         this.setVolume = this.setVolume.bind(this);

@@ -2,10 +2,10 @@ import WebSocketManager from './classes/websocket_manager';
 import { EventEmitter } from 'events';
 
 export class HamsaVoiceAgent extends EventEmitter {
-    constructor(apiKey) {
+    constructor(voiceAgentId = null) {
         super();
         this.webSocketManager = null;
-        this.apiKey = apiKey;
+        this.voiceAgentId = voiceAgentId;
         this.API_URL = "http://hamsa-new-606901899.eu-west-1.elb.amazonaws.com";
         this.WS_URL = "wss://bots.tryhamsa.com/stream";
         this.jobId = null;
@@ -50,7 +50,7 @@ export class HamsaVoiceAgent extends EventEmitter {
                 () => this.emit('closed'),                           // onClosed
                 voiceEnablement,
                 tools,
-                this.apiKey,
+                this.voiceAgentId,
                 (remoteStream) => this.emit('remoteAudioStreamAvailable', remoteStream), // onRemoteStreamAvailable
                 (localStream) => this.emit('localAudioStreamAvailable', localStream)    // onLocalStreamAvailable
             );
@@ -109,28 +109,27 @@ export class HamsaVoiceAgent extends EventEmitter {
             throw new Error("Cannot fetch job details: jobId is not set. Start a conversation first.");
         }
 
-        const url = `${this.API_URL}/v1/job`;
+        const url = `${this.API_URL}/v1/voice-agents/conversation/${this.jobId}`;
         const headers = {
-            "Authorization": `Token ${this.apiKey}`,
+            "Authorization": `Agent ${this.voiceAgentId}`,
             "Content-Type": "application/json"
         };
-        const params = new URLSearchParams({ jobId: this.jobId });
 
         let currentInterval = initialRetryInterval;
 
         const fetchJobDetails = async (attempt = 1) => {
             try {
-                const response = await fetch(`${url}?${params.toString()}`, { method: 'GET', headers });
+                const response = await fetch(url, { method: 'GET', headers });
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
                 }
                 const data = await response.json();
-                // check if the message is COMPLETED in the data to decide if we should retry
-                if (data.message === "COMPLETED") {
-                    return data;
+                // Check if the job status is COMPLETED
+                if (data.data.status === "COMPLETED") {
+                    return data.data;
                 } else {
-                    throw new Error(`Job status is not COMPLETED: ${data.message}`);
+                    throw new Error(`Job status is not COMPLETED: ${data.data.status}`);
                 }
             } catch (error) {
                 if (attempt < maxRetries) {
@@ -158,7 +157,7 @@ export class HamsaVoiceAgent extends EventEmitter {
      */
     async #init_conversation(voiceAgentId, params, voiceEnablement, tools) {
         const headers = {
-            "Authorization": `Agent ${voiceAgentId}`,
+            "Authorization": `Agent ${this.voiceAgentId}`,
             "Content-Type": "application/json"
         };
         const llmtools = (voiceEnablement && tools) ? this.#convertToolsToLLMTools(tools) : [];
