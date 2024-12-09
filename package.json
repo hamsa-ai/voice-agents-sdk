@@ -1,6 +1,6 @@
 {
   "name": "@hamsa-ai/voice-agents-sdk",
-  "version": "0.2.0",
+  "version": "0.2.0-beta.7",
   "description": "Hamsa AI - Voice Agents JavaScript SDK",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -8,6 +8,7 @@
   "types": "types/main.d.ts",
   "exports": {
     ".": {
+      "types": "./types/main.d.ts",
       "import": "./dist/index.esm.js",
       "require": "./dist/index.cjs.js",
       "browser": "./dist/index.umd.js"
