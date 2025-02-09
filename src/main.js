@@ -2,11 +2,10 @@ import WebSocketManager from './classes/websocket_manager';
 import { EventEmitter } from 'events';
 
 export class HamsaVoiceAgent extends EventEmitter {
-    constructor(voiceAgentId = null, environment = 'production') {
+    constructor(apiKey, environment = 'production') {
         super();
         this.webSocketManager = null;
-        this.voiceAgentId = voiceAgentId;
-        
+        this.apiKey = apiKey;
         // Validate environment parameter
         if (!['development', 'production'].includes(environment)) {
             throw new Error("Environment must be either 'development' or 'production'");
@@ -63,7 +62,7 @@ export class HamsaVoiceAgent extends EventEmitter {
                 () => this.emit('closed'),                           // onClosed
                 voiceEnablement,
                 tools,
-                this.voiceAgentId,
+                this.apiKey,
                 (remoteStream) => this.emit('remoteAudioStreamAvailable', remoteStream), // onRemoteStreamAvailable
                 (localStream) => this.emit('localAudioStreamAvailable', localStream)    // onLocalStreamAvailable
             );
@@ -124,15 +123,16 @@ export class HamsaVoiceAgent extends EventEmitter {
 
         const url = `${this.API_URL}/v1/voice-agents/conversation/${this.jobId}`;
         const headers = {
-            "Authorization": `Agent ${this.voiceAgentId}`,
+            "Authorization": `Token ${this.apiKey}`,
             "Content-Type": "application/json"
         };
+        const params = new URLSearchParams({ jobId: this.jobId });
 
         let currentInterval = initialRetryInterval;
 
         const fetchJobDetails = async (attempt = 1) => {
             try {
-                const response = await fetch(url, { method: 'GET', headers });
+                const response = await fetch(`${url}?${params.toString()}`, { method: 'GET', headers });
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
@@ -170,7 +170,7 @@ export class HamsaVoiceAgent extends EventEmitter {
      */
     async #init_conversation(voiceAgentId, params, voiceEnablement, tools) {
         const headers = {
-            "Authorization": `Agent ${this.voiceAgentId}`,
+            "Authorization": `Token ${this.apiKey}`,
             "Content-Type": "application/json"
         };
         const llmtools = (voiceEnablement && tools) ? this.#convertToolsToLLMTools(tools) : [];
