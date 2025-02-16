@@ -1,7 +1,7 @@
 export class HamsaVoiceAgent extends EventEmitter<[never]> {
-    constructor(voiceAgentId?: any, environment?: string);
+    constructor(apiKey: any);
     webSocketManager: WebSocketManager;
-    voiceAgentId: any;
+    apiKey: any;
     API_URL: string;
     WS_URL: string;
     jobId: string;

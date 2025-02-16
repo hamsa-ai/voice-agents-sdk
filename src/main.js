@@ -2,24 +2,12 @@ import WebSocketManager from './classes/websocket_manager';
 import { EventEmitter } from 'events';
 
 export class HamsaVoiceAgent extends EventEmitter {
-    constructor(apiKey, environment = 'production') {
+    constructor(apiKey) {
         super();
         this.webSocketManager = null;
         this.apiKey = apiKey;
-        // Validate environment parameter
-        if (!['development', 'production'].includes(environment)) {
-            throw new Error("Environment must be either 'development' or 'production'");
-        }
-        
-        // Set URLs based on environment
-        if (environment === 'development') {
-            this.API_URL = "https://api-dev.tryhamsa.com";
-            this.WS_URL = "wss://bots-dev.tryhamsa.com/stream";
-        } else {
-            this.API_URL = "https://api.tryhamsa.com";
-            this.WS_URL = "wss://bots.tryhamsa.com/stream";
-        }
-        
+        this.API_URL = "https://api.tryhamsa.com";
+        this.WS_URL = "wss://bots.tryhamsa.com/stream";    
         this.jobId = null;
     }
 
