@@ -1,7 +1,18 @@
 export class HamsaVoiceAgent extends EventEmitter<[never]> {
-    constructor(apiKey: any);
+    /**
+     * Creates a new HamsaVoiceAgent instance.
+     *
+     * @param {string} apiKey - API key.
+     * @param {object} [config] - Optional config.
+     * @param {string} [config.API_URL="https://api.tryhamsa.com"] - API URL.
+     * @param {string} [config.WS_URL="wss://bots.tryhamsa.com/stream"] - WebSocket URL.
+     */
+    constructor(apiKey: string, { API_URL, WS_URL, }?: {
+        API_URL?: string;
+        WS_URL?: string;
+    });
     webSocketManager: WebSocketManager;
-    apiKey: any;
+    apiKey: string;
     API_URL: string;
     WS_URL: string;
     jobId: string;
