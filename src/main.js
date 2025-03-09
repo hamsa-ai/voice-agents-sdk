@@ -2,12 +2,26 @@ import WebSocketManager from './classes/websocket_manager';
 import { EventEmitter } from 'events';
 
 export class HamsaVoiceAgent extends EventEmitter {
-    constructor(apiKey) {
+	/**
+     * Creates a new HamsaVoiceAgent instance.
+     *
+     * @param {string} apiKey - API key.
+     * @param {object} [config] - Optional config.
+     * @param {string} [config.API_URL="https://api.tryhamsa.com"] - API URL.
+     * @param {string} [config.WS_URL="wss://bots.tryhamsa.com/stream"] - WebSocket URL.
+     */
+	constructor(
+		apiKey,
+		{
+			API_URL = "https://api.tryhamsa.com",
+			WS_URL = "wss://bots.tryhamsa.com/stream",
+		} = {}
+	) {
         super();
         this.webSocketManager = null;
         this.apiKey = apiKey;
-        this.API_URL = "https://api.tryhamsa.com";
-        this.WS_URL = "wss://bots.tryhamsa.com/stream";    
+		this.API_URL = API_URL;
+		this.WS_URL = WS_URL;
         this.jobId = null;
     }
 
