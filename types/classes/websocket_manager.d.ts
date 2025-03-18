@@ -78,11 +78,35 @@ export default class WebSocketManager {
      */
     resumeCall(): void;
     /**
-     * Runs the tools based on the received tools array.
-     * @param {Array} tools_array - Array of tool objects.
-     * @returns {Array} Results after running the tools.
+     * Executes the provided tool functions, supporting both synchronous and asynchronous calls.
+     *
+     * This function iterates over the given array of tool objects. For each tool of type
+     * "function", it attempts to locate the corresponding function by its name in the tools list.
+     * The function arguments are parsed from a JSON string and passed to the function.
+     * If the function executes successfully, its response is captured; otherwise, an error
+     * message is returned. The results are returned in the same order as the input array.
+     *
+     * @param {Array} tools_array - An array of tool objects to execute. Each object should
+     * have the following structure:
+     *   {
+     *     id: <unique identifier>,
+     *     type: "function",
+     *     function: {
+     *       name: <string>,           // The function's name.
+     *       arguments: <string>       // A JSON string representing the function arguments.
+     *     }
+     *   }
+     * @returns {Promise<Array>} A promise that resolves to an array of results. Each result object has
+     * the structure:
+     *   {
+     *     id: <tool id>,
+     *     function: {
+     *       name: <function name>,
+     *       response: <result of the function call or an error message>
+     *     }
+     *   }
      */
-    run_tools(tools_array: any[]): any[];
+    run_tools(tools_array: any[]): Promise<any[]>;
     #private;
 }
 import AudioPlayer from './audio_player';

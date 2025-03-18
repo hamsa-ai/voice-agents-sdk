@@ -146,9 +146,21 @@ export default class WebSocketManager {
                     if (this.onAnswerReceivedCB) this.onAnswerReceivedCB(message.content);
                     break;
                 case 'tools':
-                    const tools_response = this.run_tools(message.content);
-                    this.ws.send(JSON.stringify({ event: 'tools_response', tools_response: tools_response,  streamSid: 'WEBSDK' }));
-                    break;            
+                    this.run_tools(message.content)
+                        .then((tools_response) => {
+                            this.ws.send(
+                                JSON.stringify({
+                                    event: 'tools_response',
+                                    tools_response: tools_response,
+                                    streamSid: 'WEBSDK',
+                                })
+                            );
+                        })
+                        .catch((error) => {
+                            console.error('Error running tools:', error);
+                            this.onErrorCB(error);
+                        });
+                    break;
                 default:
                     console.warn(`Unhandled event type: ${message.event}`);
                     break;
@@ -252,42 +264,85 @@ export default class WebSocketManager {
         }
     }
 
-    /**
-     * Runs the tools based on the received tools array.
-     * @param {Array} tools_array - Array of tool objects.
-     * @returns {Array} Results after running the tools.
-     */
-    run_tools(tools_array) {
-        const results = [];
-        tools_array.forEach(item => {
-            if (item.type === 'function') {
-                const selected_function = this.#findFunctionByName(item.function.name)
-                const functionName = item.function.name;
-                const functionArgs = JSON.parse(item.function.arguments);
-                if (selected_function && typeof selected_function["fn"] === 'function') {
-                    const response = selected_function["fn"](...Object.values(functionArgs));
-                    results.push({
-                        id: item.id,
-                        function: {
-                            name: functionName,
-                            response: response
-                        }
-                    });
-                } else {
-                    results.push({
-                        id: item.id,
-                        function: {
-                            name: functionName,
-                            response: "Error could not find the function"
-                        }
-                    });                    
-                    console.log(`Function ${functionName} is not defined`);
-                }
+/**
+ * Executes the provided tool functions, supporting both synchronous and asynchronous calls.
+ *
+ * This function iterates over the given array of tool objects. For each tool of type
+ * "function", it attempts to locate the corresponding function by its name in the tools list.
+ * The function arguments are parsed from a JSON string and passed to the function.
+ * If the function executes successfully, its response is captured; otherwise, an error
+ * message is returned. The results are returned in the same order as the input array.
+ *
+ * @param {Array} tools_array - An array of tool objects to execute. Each object should
+ * have the following structure:
+ *   {
+ *     id: <unique identifier>,
+ *     type: "function",
+ *     function: {
+ *       name: <string>,           // The function's name.
+ *       arguments: <string>       // A JSON string representing the function arguments.
+ *     }
+ *   }
+ * @returns {Promise<Array>} A promise that resolves to an array of results. Each result object has
+ * the structure:
+ *   {
+ *     id: <tool id>,
+ *     function: {
+ *       name: <function name>,
+ *       response: <result of the function call or an error message>
+ *     }
+ *   }
+ */
+async run_tools(tools_array) {
+    return await Promise.all(
+      tools_array.map(async (item) => {
+        if (item.type === "function") {
+          const selected_function = this.#findFunctionByName(item.function.name);
+          const functionName = item.function.name;
+          const functionArgs = JSON.parse(item.function.arguments);
+  
+          if (
+            selected_function &&
+            typeof selected_function["fn"] === "function"
+          ) {
+            try {
+              const response = await selected_function["fn"](
+                ...Object.values(functionArgs)
+              );
+              return {
+                id: item.id,
+                function: {
+                  name: functionName,
+                  response: response,
+                },
+              };
+            } catch (error) {
+              console.error(`Error running function ${functionName}:`, error);
+              return {
+                id: item.id,
+                function: {
+                  name: functionName,
+                  response:
+                    "Error executing the function: " + error.message,
+                },
+              };
             }
-        });
-    
-        return results;
-    }
+          } else {
+            console.log(`Function ${functionName} is not defined`);
+            return {
+              id: item.id,
+              function: {
+                name: functionName,
+                response: "Error could not find the function",
+              },
+            };
+          }
+        }
+        // Return null for items that are not of type "function"
+        return null;
+      })
+    );
+  }  
 
     /**
      * Finds a function by its name from the tools array.
@@ -307,5 +362,5 @@ export default class WebSocketManager {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.close(1000, 'Normal Closure');
         }
-    }            
+    }
 }
