@@ -1,4 +1,5 @@
 import WebSocketManager from './classes/websocket_manager';
+import ScreenWakeLock from "./classes/screen_wake_lock";
 import { EventEmitter } from 'events';
 
 export class HamsaVoiceAgent extends EventEmitter {
@@ -23,6 +24,7 @@ export class HamsaVoiceAgent extends EventEmitter {
 		this.API_URL = API_URL;
 		this.WS_URL = WS_URL;
         this.jobId = null;
+        this.wakeLockManager = new ScreenWakeLock();
     }
 
     /**
@@ -70,6 +72,13 @@ export class HamsaVoiceAgent extends EventEmitter {
             );
 
             this.webSocketManager.startCall();
+
+			// Acquire the screen wake lock when the call starts
+			try {
+				await this.wakeLockManager.acquire();
+			} catch (error) {
+				console.error("Failed to acquire wake lock:", error);
+			}
             this.emit('callStarted');
         } catch (e) {
             this.emit('error', new Error("Error in starting the call! Make sure you initialized the client with init()."));
@@ -85,10 +94,19 @@ export class HamsaVoiceAgent extends EventEmitter {
                 this.webSocketManager.endCall();
                 this.emit('callEnded');
             }
+			// Release the wake lock when pausing the call
+			if (this.wakeLockManager?.isActive()) {
+				this.wakeLockManager
+					.release()
+					.catch((err) =>
+						console.error("Error in releasing wake lock:", err)
+					);
+            }
         } catch (e) {
             this.emit('error', new Error("Error in ending the call! Make sure you initialized the client with init()."));
         }
     }
+
 
     /**
      * Pauses the current voice agent call.
@@ -96,6 +114,12 @@ export class HamsaVoiceAgent extends EventEmitter {
     pause() {
         if (this.webSocketManager) {
             this.webSocketManager.pauseCall();
+			// Release the wake lock when pausing the call
+			if (this.wakeLockManager?.isActive()) {
+                this.wakeLockManager.release().catch((err) =>
+                  console.error("Error in releasing wake lock:", err)
+                );
+              }              
             this.emit('callPaused');
         }
     }
@@ -105,9 +129,15 @@ export class HamsaVoiceAgent extends EventEmitter {
      */
     resume() {
         if (this.webSocketManager) {
-            this.webSocketManager.resumeCall();
-            this.emit('callResumed');
-        }
+			this.webSocketManager.resumeCall();
+			// Re-acquire the wake lock when resuming the call
+			this.wakeLockManager
+				.acquire()
+				.catch((err) =>
+					console.error("Error acquiring wake lock on resume:", err)
+				);
+			this.emit("callResumed");
+		}
     }
     
     /**

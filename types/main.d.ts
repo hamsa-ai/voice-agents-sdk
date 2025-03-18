@@ -16,6 +16,7 @@ export class HamsaVoiceAgent extends EventEmitter<[never]> {
     API_URL: string;
     WS_URL: string;
     jobId: string;
+    wakeLockManager: ScreenWakeLock;
     /**
      * Sets the volume for the audio playback.
      * @param {number} volume - Volume level between 0.0 and 1.0.
@@ -51,3 +52,4 @@ export class HamsaVoiceAgent extends EventEmitter<[never]> {
 }
 import { EventEmitter } from 'events';
 import WebSocketManager from './classes/websocket_manager';
+import ScreenWakeLock from "./classes/screen_wake_lock";
