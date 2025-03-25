@@ -205,7 +205,7 @@ export class HamsaVoiceAgent extends EventEmitter {
             "Authorization": `Token ${this.apiKey}`,
             "Content-Type": "application/json"
         };
-        const llmtools = (voiceEnablement && tools) ? this.#convertToolsToLLMTools(tools) : [];
+        const llmtools = tools?.length > 0 ? this.#convertToolsToLLMTools(tools) : [];
         const body = {
             voiceAgentId,
             params,
