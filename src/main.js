@@ -237,7 +237,8 @@ export class HamsaVoiceAgent extends EventEmitter {
      * @returns {Array} Array of LLMTool objects.
      */
     #convertToolsToLLMTools(tools) {
-        return tools.map(item => ({
+        return tools.map(item => {
+        const llmTool = {
             type: "function",
             function: {
                 name: item.function_name,
@@ -254,7 +255,15 @@ export class HamsaVoiceAgent extends EventEmitter {
                     required: item.required || [] 
                 }
             }
-        }));
+        };
+    
+        // If func_map is provided, copy it as is
+        if (item.func_map) {
+            llmTool.function.func_map = item.func_map;
+        }
+    
+        return llmTool;
+        });
     }
 
     /**
