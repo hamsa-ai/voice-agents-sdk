@@ -18,6 +18,7 @@ export default class WebSocketManager {
      * @param {string} apiKey - API key for authentication.
      * @param {function} onRemoteStreamAvailable - Callback when remote MediaStream is available.
      * @param {function} onLocalStreamAvailable - Callback when local MediaStream is available.
+     * @param {function} onInfo - Callback for info events.
      */
     constructor(
         url, 
@@ -33,7 +34,8 @@ export default class WebSocketManager {
         tools,
         apiKey,
         onRemoteStreamAvailable,
-        onLocalStreamAvailable 
+        onLocalStreamAvailable,
+        onInfo
     ) {
         this.url = `${url}/${conversationId}?api_key=${apiKey}`;
         this.ws = null;
@@ -55,6 +57,7 @@ export default class WebSocketManager {
         this.apiKey = apiKey;
         this.onRemoteStreamAvailable = onRemoteStreamAvailable;
         this.onLocalStreamAvailable = onLocalStreamAvailable;
+        this.onInfoCB = onInfo;
         this.setVolume = this.setVolume.bind(this);
     }
 
@@ -144,6 +147,9 @@ export default class WebSocketManager {
                     break;
                 case 'answer':
                     if (this.onAnswerReceivedCB) this.onAnswerReceivedCB(message.content);
+                    break;
+                case 'info':
+                    if (this.onInfoCB) this.onInfoCB(message);
                     break;
                 case 'tools':
                     this.run_tools(message.content)

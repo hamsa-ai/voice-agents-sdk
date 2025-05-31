@@ -15,8 +15,9 @@ export default class WebSocketManager {
      * @param {string} apiKey - API key for authentication.
      * @param {function} onRemoteStreamAvailable - Callback when remote MediaStream is available.
      * @param {function} onLocalStreamAvailable - Callback when local MediaStream is available.
+     * @param {function} onInfo - Callback for info events.
      */
-    constructor(url: string, conversationId: string, onError: Function, onStart: Function, onTranscriptionReceived: Function, onAnswerReceived: Function, onSpeaking: Function, onListening: Function, onClosed: Function, voiceEnablement: boolean, tools: any[], apiKey: string, onRemoteStreamAvailable: Function, onLocalStreamAvailable: Function);
+    constructor(url: string, conversationId: string, onError: Function, onStart: Function, onTranscriptionReceived: Function, onAnswerReceived: Function, onSpeaking: Function, onListening: Function, onClosed: Function, voiceEnablement: boolean, tools: any[], apiKey: string, onRemoteStreamAvailable: Function, onLocalStreamAvailable: Function, onInfo: Function);
     url: string;
     ws: WebSocket;
     isConnected: boolean;
@@ -32,6 +33,7 @@ export default class WebSocketManager {
     onSpeakingCB: Function;
     onListeningCB: Function;
     onClosedCB: Function;
+    onInfoCB: Function;
     voiceEnablement: boolean;
     tools: any[];
     apiKey: string;

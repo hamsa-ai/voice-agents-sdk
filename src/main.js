@@ -68,7 +68,8 @@ export class HamsaVoiceAgent extends EventEmitter {
                 tools,
                 this.apiKey,
                 (remoteStream) => this.emit('remoteAudioStreamAvailable', remoteStream), // onRemoteStreamAvailable
-                (localStream) => this.emit('localAudioStreamAvailable', localStream)    // onLocalStreamAvailable
+                (localStream) => this.emit('localAudioStreamAvailable', localStream),    // onLocalStreamAvailable
+                (info) => this.emit('info', info)                    // onInfo
             );
 
             this.webSocketManager.startCall();
