@@ -1,4 +1,5 @@
-export default class HamsaVoiceAgent extends EventEmitter<[never]> {
+export default HamsaVoiceAgent;
+export class HamsaVoiceAgent extends EventEmitter<[never]> {
     /**
      * Creates a new HamsaVoiceAgent instance.
      *

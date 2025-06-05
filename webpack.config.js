@@ -42,7 +42,6 @@ const umdConfig = {
         library: {
             name: 'HamsaVoiceAgent',
             type: 'umd',
-            export: 'default',
         },
         globalObject: 'this',
         umdNamedDefine: true

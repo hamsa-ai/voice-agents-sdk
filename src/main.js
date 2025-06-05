@@ -2,7 +2,7 @@ import WebSocketManager from './classes/websocket_manager';
 import ScreenWakeLock from "./classes/screen_wake_lock";
 import { EventEmitter } from 'events';
 
-export default class HamsaVoiceAgent extends EventEmitter {
+class HamsaVoiceAgent extends EventEmitter {
 	/**
      * Creates a new HamsaVoiceAgent instance.
      *
@@ -277,3 +277,7 @@ export default class HamsaVoiceAgent extends EventEmitter {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
+
+// Support both named and default exports
+export { HamsaVoiceAgent };
+export default HamsaVoiceAgent;
