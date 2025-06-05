@@ -12,18 +12,40 @@ npm i @hamsa-ai/voice-agents-sdk
 
 ## Usage
 
+### Using via npm
+
 First, import the package in your code:
 
 ```javascript
 import { HamsaVoiceAgent } from '@hamsa-ai/voice-agents-sdk'
 ```
 
-Initialize the SDK with your API key.
-To obtain your first API key, visit <https://dashboard.tryhamsa.com>
+Initialize the SDK with your API key:
 
 ```javascript
 const agent = new HamsaVoiceAgent(API_KEY);
 ```
+
+### Using via CDN
+
+Include the script from a CDN:
+
+```html
+<script src="https://unpkg.com/@hamsa-ai/voice-agents-sdk@LATEST_VERSION/dist/index.umd.js"></script>
+```
+
+Then, you can initialize the agent like this:
+
+```javascript
+const agent = new HamsaVoiceAgent('YOUR_API_KEY');
+
+agent.on("callStarted", () => { console.log("Conversation has started!"); });
+
+// Example: Start a call
+// agent.start({ agentId: 'YOUR_AGENT_ID' });
+```
+
+Make sure to replace `LATEST_VERSION` with the actual latest version number.
 
 ## Start a Conversation with an Existing Agent
 

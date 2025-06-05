@@ -40,8 +40,9 @@ const umdConfig = {
         path: path.resolve(__dirname, 'dist'),
         filename: 'index.umd.js',
         library: {
-            name: 'Hamsa Voice-Agents SDK',
-            type: 'umd',  // UMD ensures compatibility across environments
+            name: 'HamsaVoiceAgent',
+            type: 'umd',
+            export: 'default',
         },
         globalObject: 'this',
         umdNamedDefine: true

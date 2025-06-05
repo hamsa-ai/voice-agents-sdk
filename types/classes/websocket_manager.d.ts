@@ -33,12 +33,12 @@ export default class WebSocketManager {
     onSpeakingCB: Function;
     onListeningCB: Function;
     onClosedCB: Function;
-    onInfoCB: Function;
     voiceEnablement: boolean;
     tools: any[];
     apiKey: string;
     onRemoteStreamAvailable: Function;
     onLocalStreamAvailable: Function;
+    onInfoCB: Function;
     /**
      * Sets the volume for AudioPlayer.
      * @param {number} volume - Volume level between 0.0 and 1.0.

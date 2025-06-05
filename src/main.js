@@ -2,7 +2,7 @@ import WebSocketManager from './classes/websocket_manager';
 import ScreenWakeLock from "./classes/screen_wake_lock";
 import { EventEmitter } from 'events';
 
-export class HamsaVoiceAgent extends EventEmitter {
+export default class HamsaVoiceAgent extends EventEmitter {
 	/**
      * Creates a new HamsaVoiceAgent instance.
      *
