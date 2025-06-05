@@ -1,6 +1,6 @@
 {
   "name": "@hamsa-ai/voice-agents-sdk",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "Hamsa AI - Voice Agents JavaScript SDK",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
