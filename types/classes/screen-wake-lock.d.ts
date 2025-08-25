@@ -20,27 +20,27 @@
 export default class ScreenWakeLock {
     /**
      * The wake lock sentinel that controls the screen wake lock.
-     * @type {WakeLockSentinel|null}
      * @private
      */
     private _wakeLock;
+    constructor();
     /**
      * Attempts to acquire a screen wake lock.
      * If the Wake Lock API is not supported, a warning is logged.
      *
-     * @returns {Promise<void>}
+     * @returns Promise<void>
      */
     acquire(): Promise<void>;
     /**
      * Releases the screen wake lock if it is active.
      *
-     * @returns {Promise<void>}
+     * @returns Promise<void>
      */
     release(): Promise<void>;
     /**
      * Indicates whether the wake lock is currently active.
      *
-     * @returns {boolean} True if the wake lock is active, false otherwise.
+     * @returns True if the wake lock is active, false otherwise.
      */
     isActive(): boolean;
 }
