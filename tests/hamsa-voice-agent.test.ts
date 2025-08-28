@@ -72,8 +72,21 @@ describe('HamsaVoiceAgent', () => {
 
       await voiceAgent.start(startOptions);
 
-      expect(fetch).toHaveBeenCalledWith(
-        `${mockConfig.API_URL}/v1/voice-agents/live-kit/conversation-init`,
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        `${mockConfig.API_URL}/room/participant-token?voiceAgentId=test-agent`,
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            Authorization: `Token ${mockApiKey}`,
+            'Content-Type': 'application/json',
+          }),
+        })
+      );
+
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        `${mockConfig.API_URL}/room/conversation-init`,
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -123,16 +136,17 @@ describe('HamsaVoiceAgent', () => {
 
       await voiceAgent.start(startOptions);
 
-      expect(fetch).toHaveBeenCalledWith(
-        `${mockConfig.API_URL}/v1/voice-agents/live-kit/conversation-init`,
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        `${mockConfig.API_URL}/room/participant-token?voiceAgentId=test-agent`,
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        `${mockConfig.API_URL}/room/conversation-init`,
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({
-            voiceAgentId: 'test-agent',
-            params: { name: 'Test' },
-            voiceEnablement: true,
-            tools: [],
-          }),
+          body: expect.stringContaining('"voiceAgentId":"test-agent"'),
         })
       );
 
@@ -215,7 +229,7 @@ describe('HamsaVoiceAgent', () => {
       });
 
       const requestBody = JSON.parse(
-        ((fetch as any).mock.calls[0][1] as any).body
+        ((fetch as any).mock.calls[1][1] as any).body
       );
       expect(requestBody.tools).toEqual([
         {
@@ -261,7 +275,7 @@ describe('HamsaVoiceAgent', () => {
       });
 
       const requestBody = JSON.parse(
-        ((fetch as any).mock.calls[0][1] as any).body
+        ((fetch as any).mock.calls[1][1] as any).body
       );
       expect(requestBody.tools[0].function.func_map).toEqual({
         customMapping: 'value',
@@ -592,9 +606,9 @@ describe('HamsaVoiceAgent', () => {
         tools: [testTool],
       });
 
-      // Verify tool was included in the request
+      // Verify tool was included in the conversation-init request (2nd call)
       const requestBody = JSON.parse(
-        ((fetch as any).mock.calls[0][1] as any).body
+        ((fetch as any).mock.calls[1][1] as any).body
       );
       expect(requestBody.tools).toHaveLength(1);
       expect(requestBody.tools[0].function.name).toBe('getUserInfo');
@@ -631,7 +645,11 @@ describe('HamsaVoiceAgent', () => {
 
       // Should have created a new manager
       expect(voiceAgent.liveKitManager).not.toBe(firstManager);
-      expect(fetch).toHaveBeenCalledTimes(2);
+
+      // Two fetches per start call (token + conversation-init)
+      const FETCH_CALLS_PER_START = 2;
+      const EXPECTED_TOTAL_FETCH_CALLS = FETCH_CALLS_PER_START * 2;
+      expect(fetch).toHaveBeenCalledTimes(EXPECTED_TOTAL_FETCH_CALLS);
     });
 
     test('should handle getJobDetails method', async () => {
@@ -643,6 +661,7 @@ describe('HamsaVoiceAgent', () => {
       };
 
       (fetch as any)
+        // participant-token
         .mockResolvedValueOnce({
           ok: true,
           json: (jest.fn() as any).mockResolvedValue({
@@ -650,6 +669,13 @@ describe('HamsaVoiceAgent', () => {
             data: { liveKitAccessToken: 'token', jobId: 'job-123' },
           }),
         } as unknown as Response)
+        // conversation-init
+        .mockResolvedValueOnce({
+          ok: true,
+          text: (jest.fn() as any).mockResolvedValue(''),
+          json: (jest.fn() as any).mockResolvedValue({}),
+        } as unknown as Response)
+        // job details
         .mockResolvedValueOnce({
           ok: true,
           json: (jest.fn() as any).mockResolvedValue({
@@ -745,8 +771,9 @@ describe('HamsaVoiceAgent', () => {
       });
 
       expect(voiceAgent.jobId).toBe('mock-job-id');
-      expect(fetch).toHaveBeenCalledWith(
-        `${mockConfig.API_URL}/v1/voice-agents/live-kit/conversation-init`,
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        `${mockConfig.API_URL}/room/conversation-init`,
         expect.any(Object)
       );
     });

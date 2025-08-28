@@ -886,41 +886,73 @@ class HamsaVoiceAgent extends EventEmitter {
       Authorization: `Token ${this.apiKey}`,
       'Content-Type': 'application/json',
     };
-    const llmtools =
-      tools?.length > 0 ? this.#convertToolsToLLMTools(tools) : [];
-    const body = {
-      voiceAgentId,
-      params,
-      voiceEnablement,
-      tools: llmtools,
-    };
-
-    const requestOptions: RequestInit = {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      redirect: 'follow' as RequestRedirect,
-    };
 
     try {
-      const response = await fetch(
-        `${this.API_URL}/v1/voice-agents/live-kit/conversation-init`,
-        requestOptions
+      // Step 1: Get LiveKit participant token
+      const tokenResponse = await fetch(
+        `${this.API_URL}/room/participant-token?voiceAgentId=${voiceAgentId}`,
+        {
+          method: 'GET',
+          headers,
+        }
       );
-      if (!response.ok) {
-        const errorText = await response.text();
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
         throw new Error(
-          `API Error: ${response.status} ${response.statusText} - ${errorText}`
+          `Token API Error: ${tokenResponse.status} ${tokenResponse.statusText} - ${errorText}`
         );
       }
-      const result = await response.json();
 
-      if (result.success && result.data && result.data.liveKitAccessToken) {
-        // Store jobId for compatibility with getJobDetails method
-        this.jobId = result.data.jobId || result.data.conversationId || null;
-        return result.data.liveKitAccessToken;
+      const tokenResult = await tokenResponse.json();
+      if (!(tokenResult?.success && tokenResult?.data?.liveKitAccessToken)) {
+        throw new Error('Failed to get LiveKit access token');
       }
-      throw new Error('Invalid response format from LiveKit conversation init');
+
+      const liveKitAccessToken = tokenResult.data.liveKitAccessToken as string;
+      const jobIdFromToken = tokenResult.data.jobId as string | undefined;
+
+      // Step 2: Initialize conversation with token
+      const llmtools =
+        tools?.length > 0 ? this.#convertToolsToLLMTools(tools) : [];
+
+      const conversationBody = {
+        tools: llmtools,
+        voiceEnablement,
+        voiceAgentId,
+        params,
+        agentDetails: {
+          agentName:
+            (typeof params === 'object' && params && 'agent_name' in params
+              ? (params as Record<string, unknown>).agent_name
+              : undefined) || 'Voice Agent',
+          greetingMessage: 'Hi, how can I assist you today?',
+          preamble: 'You are a helpful AI assistant.',
+        },
+        jobId: jobIdFromToken ?? voiceAgentId,
+      };
+
+      const conversationResponse = await fetch(
+        `${this.API_URL}/room/conversation-init`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(conversationBody),
+          redirect: 'follow' as RequestRedirect,
+        }
+      );
+
+      if (!conversationResponse.ok) {
+        const errorText = await conversationResponse.text();
+        throw new Error(
+          `Conversation Init API Error: ${conversationResponse.status} ${conversationResponse.statusText} - ${errorText}`
+        );
+      }
+
+      // Store jobId from token response if present, else fallback
+      this.jobId = jobIdFromToken ?? voiceAgentId;
+
+      return liveKitAccessToken;
     } catch (_error) {
       if (this.listenerCount('error') > 0) {
         this.emit(
