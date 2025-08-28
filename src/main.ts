@@ -910,7 +910,6 @@ class HamsaVoiceAgent extends EventEmitter {
       }
 
       const liveKitAccessToken = tokenResult.data.liveKitAccessToken as string;
-      const jobIdFromToken = tokenResult.data.jobId as string | undefined;
 
       // Step 2: Initialize conversation with token
       const llmtools =
@@ -929,7 +928,8 @@ class HamsaVoiceAgent extends EventEmitter {
           greetingMessage: 'Hi, how can I assist you today?',
           preamble: 'You are a helpful AI assistant.',
         },
-        jobId: jobIdFromToken ?? voiceAgentId,
+        // Backend expects jobId to be the LiveKit identifier from the token
+        jobId: liveKitAccessToken,
       };
 
       const conversationResponse = await fetch(
@@ -949,8 +949,8 @@ class HamsaVoiceAgent extends EventEmitter {
         );
       }
 
-      // Store jobId from token response if present, else fallback
-      this.jobId = jobIdFromToken ?? voiceAgentId;
+      // Store jobId as the LiveKit token for downstream job lookups
+      this.jobId = liveKitAccessToken;
 
       return liveKitAccessToken;
     } catch (_error) {

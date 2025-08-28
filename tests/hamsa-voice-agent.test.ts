@@ -150,7 +150,7 @@ describe('HamsaVoiceAgent', () => {
         })
       );
 
-      expect(voiceAgent.jobId).toBe('mock-job-id');
+      expect(voiceAgent.jobId).toBe('mock-livekit-token');
     });
 
     test('should handle token fetch failure', async () => {
@@ -549,7 +549,7 @@ describe('HamsaVoiceAgent', () => {
 
       expect(lifecycleEvents).toContain('callStarted');
       expect(voiceAgent.liveKitManager).toBeDefined();
-      expect(voiceAgent.jobId).toBe('mock-job-id');
+      expect(voiceAgent.jobId).toBe('mock-livekit-token');
 
       // Simulate connected event
       if (voiceAgent.liveKitManager) {
@@ -666,7 +666,7 @@ describe('HamsaVoiceAgent', () => {
           ok: true,
           json: (jest.fn() as any).mockResolvedValue({
             success: true,
-            data: { liveKitAccessToken: 'token', jobId: 'job-123' },
+            data: { liveKitAccessToken: 'token-abc', jobId: 'job-123' },
           }),
         } as unknown as Response)
         // conversation-init
@@ -700,7 +700,7 @@ describe('HamsaVoiceAgent', () => {
 
       expect(jobDetails).toEqual(mockJobDetails);
       expect(fetch).toHaveBeenCalledWith(
-        `${mockConfig.API_URL}/v1/voice-agents/conversation/job-123?jobId=job-123`,
+        `${mockConfig.API_URL}/v1/voice-agents/conversation/token-abc?jobId=token-abc`,
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({
@@ -770,7 +770,7 @@ describe('HamsaVoiceAgent', () => {
         tools: [],
       });
 
-      expect(voiceAgent.jobId).toBe('mock-job-id');
+      expect(voiceAgent.jobId).toBe('mock-livekit-token');
       expect(fetch).toHaveBeenNthCalledWith(
         2,
         `${mockConfig.API_URL}/v1/voice-agents/room/conversation-init`,
