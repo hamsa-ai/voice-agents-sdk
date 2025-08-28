@@ -74,7 +74,7 @@ describe('HamsaVoiceAgent', () => {
 
       expect(fetch).toHaveBeenNthCalledWith(
         1,
-        `${mockConfig.API_URL}/room/participant-token?voiceAgentId=test-agent`,
+        `${mockConfig.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=test-agent`,
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({
@@ -86,7 +86,7 @@ describe('HamsaVoiceAgent', () => {
 
       expect(fetch).toHaveBeenNthCalledWith(
         2,
-        `${mockConfig.API_URL}/room/conversation-init`,
+        `${mockConfig.API_URL}/v1/voice-agents/room/conversation-init`,
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -138,12 +138,12 @@ describe('HamsaVoiceAgent', () => {
 
       expect(fetch).toHaveBeenNthCalledWith(
         1,
-        `${mockConfig.API_URL}/room/participant-token?voiceAgentId=test-agent`,
+        `${mockConfig.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=test-agent`,
         expect.objectContaining({ method: 'GET' })
       );
       expect(fetch).toHaveBeenNthCalledWith(
         2,
-        `${mockConfig.API_URL}/room/conversation-init`,
+        `${mockConfig.API_URL}/v1/voice-agents/room/conversation-init`,
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('"voiceAgentId":"test-agent"'),
@@ -773,7 +773,7 @@ describe('HamsaVoiceAgent', () => {
       expect(voiceAgent.jobId).toBe('mock-job-id');
       expect(fetch).toHaveBeenNthCalledWith(
         2,
-        `${mockConfig.API_URL}/room/conversation-init`,
+        `${mockConfig.API_URL}/v1/voice-agents/room/conversation-init`,
         expect.any(Object)
       );
     });

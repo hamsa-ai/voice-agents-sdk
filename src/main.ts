@@ -890,7 +890,7 @@ class HamsaVoiceAgent extends EventEmitter {
     try {
       // Step 1: Get LiveKit participant token
       const tokenResponse = await fetch(
-        `${this.API_URL}/room/participant-token?voiceAgentId=${voiceAgentId}`,
+        `${this.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=${voiceAgentId}`,
         {
           method: 'GET',
           headers,
@@ -933,7 +933,7 @@ class HamsaVoiceAgent extends EventEmitter {
       };
 
       const conversationResponse = await fetch(
-        `${this.API_URL}/room/conversation-init`,
+        `${this.API_URL}/v1/voice-agents/room/conversation-init`,
         {
           method: 'POST',
           headers,
