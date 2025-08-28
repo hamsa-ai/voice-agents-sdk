@@ -345,3 +345,44 @@ export type CustomEventMetadata = {
   /** The original raw message data from LiveKit */
   rawMessage: Record<string, unknown>;
 };
+
+/**
+ * LiveKit access token payload structure used by Hamsa backend.
+ * Represents the decoded JWT payload fields relevant for SDK logic.
+ */
+export type LiveKitTokenPayload = {
+  video: {
+    room: string;
+    roomJoin: boolean;
+    canPublish: boolean;
+    canPublishData: boolean;
+    canSubscribe: boolean;
+  };
+  roomConfig: {
+    name: string;
+    emptyTimeout: number;
+    departureTimeout: number;
+    maxParticipants: number;
+    minPlayoutDelay: number;
+    maxPlayoutDelay: number;
+    syncStreams: boolean;
+    agents: Array<{
+      agentName: string;
+      /** JSON string containing jobId, voiceAgentId, apiKey */
+      metadata: string;
+    }>;
+  };
+  iss: string;
+  exp: number;
+  nbf: number;
+  sub: string;
+};
+
+/**
+ * Parsed metadata embedded as a JSON string in LiveKit token payload.
+ */
+export type LiveKitAgentMetadata = {
+  jobId: string;
+  voiceAgentId: string;
+  apiKey: string;
+};

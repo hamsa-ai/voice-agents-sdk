@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { jwtDecode } from 'jwt-decode';
 import LiveKitManager, {
   type AudioLevelsResult,
   type CallAnalyticsResult,
@@ -8,6 +9,7 @@ import LiveKitManager, {
   type TrackStatsResult,
 } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
+import type { LiveKitTokenPayload } from './classes/types';
 
 /**
  * Configuration options for the HamsaVoiceAgent constructor
@@ -910,6 +912,11 @@ class HamsaVoiceAgent extends EventEmitter {
       }
 
       const liveKitAccessToken = tokenResult.data.liveKitAccessToken as string;
+      const jobIdFromToken = this.#resolveJobIdFromToken(
+        liveKitAccessToken,
+        tokenResult.data.jobId as string | undefined,
+        voiceAgentId
+      );
 
       // Step 2: Initialize conversation with token
       const llmtools =
@@ -928,8 +935,8 @@ class HamsaVoiceAgent extends EventEmitter {
           greetingMessage: 'Hi, how can I assist you today?',
           preamble: 'You are a helpful AI assistant.',
         },
-        // Backend expects jobId to be the LiveKit identifier from the token
-        jobId: liveKitAccessToken,
+        // Backend expects jobId derived from the token metadata when available
+        jobId: jobIdFromToken ?? tokenResult.data.jobId ?? voiceAgentId,
       };
 
       const conversationResponse = await fetch(
@@ -949,8 +956,8 @@ class HamsaVoiceAgent extends EventEmitter {
         );
       }
 
-      // Store jobId as the LiveKit token for downstream job lookups
-      this.jobId = liveKitAccessToken;
+      // Store resolved jobId for downstream job lookups
+      this.jobId = jobIdFromToken;
 
       return liveKitAccessToken;
     } catch (_error) {
@@ -964,6 +971,30 @@ class HamsaVoiceAgent extends EventEmitter {
       }
       return null;
     }
+  }
+
+  /**
+   * Extracts the jobId value from the LiveKit access token payload metadata.
+   * Falls back to the provided endpointJobId or voiceAgentId when unavailable.
+   */
+  #resolveJobIdFromToken(
+    liveKitAccessToken: string,
+    endpointJobId: string | undefined,
+    voiceAgentId: string
+  ): string {
+    try {
+      const payload = jwtDecode<LiveKitTokenPayload>(liveKitAccessToken);
+      const agentsMeta = payload?.roomConfig?.agents?.[0]?.metadata;
+      if (typeof agentsMeta === 'string') {
+        const metaObj = JSON.parse(agentsMeta) as { jobId?: unknown };
+        if (typeof metaObj.jobId === 'string' && metaObj.jobId.length > 0) {
+          return metaObj.jobId;
+        }
+      }
+    } catch {
+      // Ignore token parsing errors and fall back
+    }
+    return endpointJobId ?? voiceAgentId;
   }
 
   /**
