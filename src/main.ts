@@ -927,14 +927,6 @@ class HamsaVoiceAgent extends EventEmitter {
         voiceEnablement,
         voiceAgentId,
         params,
-        agentDetails: {
-          agentName:
-            (typeof params === 'object' && params && 'agent_name' in params
-              ? (params as Record<string, unknown>).agent_name
-              : undefined) || 'Voice Agent',
-          greetingMessage: 'Hi, how can I assist you today?',
-          preamble: 'You are a helpful AI assistant.',
-        },
         // Backend expects jobId derived from the token metadata when available
         jobId: jobIdFromToken ?? tokenResult.data.jobId ?? voiceAgentId,
         channelType: 'Web',
