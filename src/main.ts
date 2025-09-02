@@ -937,6 +937,7 @@ class HamsaVoiceAgent extends EventEmitter {
         },
         // Backend expects jobId derived from the token metadata when available
         jobId: jobIdFromToken ?? tokenResult.data.jobId ?? voiceAgentId,
+        channelType: 'Web',
       };
 
       const conversationResponse = await fetch(
