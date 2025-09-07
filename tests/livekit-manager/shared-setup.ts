@@ -82,6 +82,10 @@ export function verifyRoomConfiguration(): void {
     videoCaptureDefaults: {
       resolution: { width: 1280, height: 720 },
     },
+    audioCaptureDefaults: {
+      echoCancellation: true,
+      noiseSuppression: true,
+    },
   };
 
   // biome-ignore lint/suspicious/noMisplacedAssertion: This is a test utility function that needs to perform assertions

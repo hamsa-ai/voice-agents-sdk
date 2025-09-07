@@ -242,6 +242,11 @@ export class LiveKitConnection extends EventEmitter {
       videoCaptureDefaults: {
         resolution: VideoPresets.h720.resolution,
       },
+      // Enable echo cancellation and noise suppression for clearer audio
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
     });
 
     // Set up event handlers for room lifecycle management
