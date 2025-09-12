@@ -181,6 +181,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
     jobId: string | null;
     /** Screen wake lock manager to prevent device sleep during calls */
     wakeLockManager: ScreenWakeLock;
+    /** Flag to track if the user initiated the call end */
+    private userInitiatedEnd;
     /**
      * Creates a new HamsaVoiceAgent instance
      *

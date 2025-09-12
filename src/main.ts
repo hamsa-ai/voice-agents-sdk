@@ -226,6 +226,10 @@ class HamsaVoiceAgent extends EventEmitter {
   /** Screen wake lock manager to prevent device sleep during calls */
   wakeLockManager: ScreenWakeLock;
 
+  /** Flag to track if the user initiated the call end */
+  // biome-ignore lint/style/useReadonlyClassProperties: userInitiatedEnd is reassigned during call lifecycle
+  private userInitiatedEnd = false;
+
   /**
    * Creates a new HamsaVoiceAgent instance
    *
@@ -578,6 +582,9 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
   }: StartOptions): Promise<void> {
     try {
+      // Reset user-initiated end flag for new call
+      this.userInitiatedEnd = false;
+
       // Get LiveKit access token
       const accessToken = await this.#initializeLiveKitConversation(
         agentId,
@@ -606,7 +613,11 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('answerReceived', (answer) => this.emit('answerReceived', answer))
         .on('speaking', () => this.emit('speaking'))
         .on('listening', () => this.emit('listening'))
-        .on('disconnected', () => this.emit('closed'))
+        .on('disconnected', () => {
+          // Reset the flag when fully disconnected
+          this.userInitiatedEnd = false;
+          this.emit('closed');
+        })
         .on('remoteAudioStreamAvailable', (remoteStream) =>
           this.emit('remoteAudioStreamAvailable', remoteStream)
         )
@@ -621,9 +632,18 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('participantConnected', (participant) =>
           this.emit('participantConnected', participant)
         )
-        .on('participantDisconnected', (participant) =>
-          this.emit('participantDisconnected', participant)
-        )
+        .on('participantDisconnected', (participant) => {
+          this.emit('participantDisconnected', participant);
+
+          // Check if this is an agent disconnecting (agent-initiated call end)
+          if (
+            participant.identity?.includes('agent') &&
+            !this.userInitiatedEnd
+          ) {
+            // Agent ended the call, not the user
+            this.emit('callEnded');
+          }
+        })
         .on('connectionQualityChanged', (data) =>
           this.emit('connectionQualityChanged', data)
         )
@@ -698,6 +718,7 @@ class HamsaVoiceAgent extends EventEmitter {
   end(): void {
     try {
       if (this.liveKitManager) {
+        this.userInitiatedEnd = true; // Mark as user-initiated
         this.liveKitManager.disconnect();
         this.emit('callEnded');
       }
