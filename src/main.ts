@@ -13,6 +13,21 @@ import ScreenWakeLock from './classes/screen-wake-lock';
 import type { LiveKitTokenPayload } from './classes/types';
 
 /**
+ * Custom error class that includes both human-readable message and machine-readable messageKey
+ * for internationalization and programmatic error handling
+ */
+class HamsaApiError extends Error {
+  /** Machine-readable error key for i18n or programmatic handling */
+  readonly messageKey?: string;
+
+  constructor(message: string, messageKey?: string) {
+    super(message);
+    this.name = 'HamsaApiError';
+    this.messageKey = messageKey;
+  }
+}
+
+/**
  * Configuration options for the HamsaVoiceAgent constructor
  * Allows customization of API endpoints and other global settings
  */
@@ -619,9 +634,6 @@ class HamsaVoiceAgent extends EventEmitter {
         voiceEnablement,
         tools
       );
-      if (!accessToken) {
-        throw new Error('Failed to initialize LiveKit conversation.');
-      }
 
       // Create LiveKitManager instance
       this.liveKitManager = new LiveKitManager(
@@ -699,14 +711,20 @@ class HamsaVoiceAgent extends EventEmitter {
         // Ignore wake lock acquisition errors
       }
       this.emit('callStarted');
-    } catch (_e) {
+    } catch (error) {
       if (this.listenerCount('error') > 0) {
-        this.emit(
-          'error',
-          new Error(
-            'Error in starting the call! Make sure you initialized the client with init().'
-          )
-        );
+        // Forward HamsaApiError instances directly to preserve messageKey
+        if (error instanceof HamsaApiError) {
+          this.emit('error', error);
+        } else {
+          // For other errors, wrap with context
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          this.emit(
+            'error',
+            new Error(`Failed to start call: ${errorMessage}`)
+          );
+        }
       }
     }
   }
@@ -752,14 +770,17 @@ class HamsaVoiceAgent extends EventEmitter {
           // Intentionally ignore wake lock release errors
         });
       }
-    } catch (_e) {
+    } catch (error) {
       if (this.listenerCount('error') > 0) {
-        this.emit(
-          'error',
-          new Error(
-            'Error in ending the call! Make sure you initialized the client with init().'
-          )
-        );
+        // Forward HamsaApiError instances directly to preserve messageKey
+        if (error instanceof HamsaApiError) {
+          this.emit('error', error);
+        } else {
+          // For other errors, wrap with context
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          this.emit('error', new Error(`Failed to end call: ${errorMessage}`));
+        }
       }
     }
   }
@@ -928,86 +949,143 @@ class HamsaVoiceAgent extends EventEmitter {
     params: Record<string, unknown>,
     voiceEnablement: boolean,
     tools: Tool[]
-  ): Promise<string | null> {
+  ): Promise<string> {
     const headers = {
       Authorization: `Token ${this.apiKey}`,
       'Content-Type': 'application/json',
     };
 
+    // Step 1: Get LiveKit participant token
+    const tokenData = await this.#fetchParticipantToken(voiceAgentId, headers);
+    const liveKitAccessToken = tokenData.liveKitAccessToken;
+    const jobIdFromToken = this.#resolveJobIdFromToken(
+      liveKitAccessToken,
+      tokenData.jobId,
+      voiceAgentId
+    );
+
+    // Step 2: Initialize conversation with token
+    await this.#initializeConversation({
+      voiceAgentId,
+      params,
+      voiceEnablement,
+      tools,
+      headers,
+      jobIdFromToken,
+      tokenData,
+    });
+
+    // Store resolved jobId for downstream job lookups
+    this.jobId = jobIdFromToken;
+
+    return liveKitAccessToken;
+  }
+
+  /**
+   * Handles API response errors by parsing JSON and creating appropriate HamsaApiError instances
+   */
+  #handleApiError(
+    response: Response,
+    errorText: string,
+    isTokenEndpoint = false
+  ): never {
+    // Try to parse JSON error response to extract message and messageKey separately
     try {
-      // Step 1: Get LiveKit participant token
-      const tokenResponse = await fetch(
-        `${this.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=${voiceAgentId}`,
-        {
-          method: 'GET',
-          headers,
-        }
-      );
-
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        throw new Error(
-          `Token API Error: ${tokenResponse.status} ${tokenResponse.statusText} - ${errorText}`
-        );
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.message) {
+        // Return both message and messageKey separately for SDK users
+        throw new HamsaApiError(errorJson.message, errorJson.messageKey);
       }
-
-      const tokenResult = await tokenResponse.json();
-      if (!(tokenResult?.success && tokenResult?.data?.liveKitAccessToken)) {
-        throw new Error('Failed to get LiveKit access token');
+    } catch (jsonError) {
+      // If not JSON or no message field, use the raw error text with status info
+      if (jsonError instanceof HamsaApiError) {
+        throw jsonError; // Re-throw if it's our custom error
       }
+    }
 
-      const liveKitAccessToken = tokenResult.data.liveKitAccessToken as string;
-      const jobIdFromToken = this.#resolveJobIdFromToken(
-        liveKitAccessToken,
-        tokenResult.data.jobId as string | undefined,
-        voiceAgentId
-      );
+    // For token endpoint, include status info; for conversation endpoint, use raw text
+    const errorMessage = isTokenEndpoint
+      ? `${response.status} ${response.statusText} - ${errorText}`
+      : errorText;
 
-      // Step 2: Initialize conversation with token
-      const llmtools =
-        tools?.length > 0 ? this.#convertToolsToLLMTools(tools) : [];
+    throw new HamsaApiError(errorMessage);
+  }
 
-      const conversationBody = {
-        tools: llmtools,
-        voiceEnablement,
-        voiceAgentId,
-        params,
-        // Backend expects jobId derived from the token metadata when available
-        jobId: jobIdFromToken ?? tokenResult.data.jobId ?? voiceAgentId,
-        channelType: 'Web',
-      };
-
-      const conversationResponse = await fetch(
-        `${this.API_URL}/v1/voice-agents/room/conversation-init`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(conversationBody),
-          redirect: 'follow' as RequestRedirect,
-        }
-      );
-
-      if (!conversationResponse.ok) {
-        const errorText = await conversationResponse.text();
-        throw new Error(
-          `Conversation Init API Error: ${conversationResponse.status} ${conversationResponse.statusText} - ${errorText}`
-        );
+  /**
+   * Fetches the LiveKit participant token from the API
+   */
+  async #fetchParticipantToken(
+    voiceAgentId: string,
+    headers: Record<string, string>
+  ): Promise<{ liveKitAccessToken: string; jobId?: string }> {
+    const tokenResponse = await fetch(
+      `${this.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=${voiceAgentId}`,
+      {
+        method: 'GET',
+        headers,
       }
+    );
 
-      // Store resolved jobId for downstream job lookups
-      this.jobId = jobIdFromToken;
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      this.#handleApiError(tokenResponse, errorText, true);
+    }
 
-      return liveKitAccessToken;
-    } catch (_error) {
-      if (this.listenerCount('error') > 0) {
-        this.emit(
-          'error',
-          new Error(
-            'Error in initializing the call. Please double-check your API_KEY and ensure you have sufficient funds in your balance.'
-          )
-        );
+    const tokenResult = await tokenResponse.json();
+    if (!(tokenResult?.success && tokenResult?.data?.liveKitAccessToken)) {
+      throw new Error('Failed to get LiveKit access token');
+    }
+
+    return tokenResult.data;
+  }
+
+  /**
+   * Initializes the conversation with the backend API
+   */
+  async #initializeConversation(options: {
+    voiceAgentId: string;
+    params: Record<string, unknown>;
+    voiceEnablement: boolean;
+    tools: Tool[];
+    headers: Record<string, string>;
+    jobIdFromToken: string | null;
+    tokenData: { jobId?: string };
+  }): Promise<void> {
+    const {
+      voiceAgentId,
+      params,
+      voiceEnablement,
+      tools,
+      headers,
+      jobIdFromToken,
+      tokenData,
+    } = options;
+    const llmtools =
+      tools?.length > 0 ? this.#convertToolsToLLMTools(tools) : [];
+
+    const conversationBody = {
+      tools: llmtools,
+      voiceEnablement,
+      voiceAgentId,
+      params,
+      // Backend expects jobId derived from the token metadata when available
+      jobId: jobIdFromToken ?? tokenData.jobId ?? voiceAgentId,
+      channelType: 'Web',
+    };
+
+    const conversationResponse = await fetch(
+      `${this.API_URL}/v1/voice-agents/room/conversation-init`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(conversationBody),
+        redirect: 'follow' as RequestRedirect,
       }
-      return null;
+    );
+
+    if (!conversationResponse.ok) {
+      const errorText = await conversationResponse.text();
+      this.#handleApiError(conversationResponse, errorText, false);
     }
   }
 
@@ -1291,5 +1369,5 @@ class HamsaVoiceAgent extends EventEmitter {
 }
 
 // Support both named and default exports
-export { HamsaVoiceAgent };
+export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;

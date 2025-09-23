@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
-import HamsaVoiceAgent from '../src/main';
+import HamsaVoiceAgent, { HamsaApiError } from '../src/main';
 import { mockSuccessfulConversationInit } from './utils/fetch-mocks';
 import {
   AGENT_CONFIGS,
@@ -173,7 +173,9 @@ describe('HamsaVoiceAgent', () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('Error in initializing the call'),
+          message: '401 Unauthorized - Invalid API key',
+          name: 'HamsaApiError',
+          messageKey: undefined,
         })
       );
     });
@@ -193,7 +195,7 @@ describe('HamsaVoiceAgent', () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('Error in initializing the call'),
+          message: expect.stringContaining('Failed to start call'),
         })
       );
     });
@@ -793,6 +795,105 @@ describe('HamsaVoiceAgent', () => {
       const end = Date.now();
 
       expect(end - start).toBeGreaterThanOrEqual(TIMING.VARIANCE_MS); // Allow some timing variance
+    });
+  });
+
+  describe('Error Handling with HamsaApiError', () => {
+    test('should create HamsaApiError with message only', () => {
+      const error = new HamsaApiError('Authentication failed');
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(HamsaApiError);
+      expect(error.message).toBe('Authentication failed');
+      expect(error.messageKey).toBeUndefined();
+      expect(error.name).toBe('HamsaApiError');
+    });
+
+    test('should create HamsaApiError with message and messageKey', () => {
+      const error = new HamsaApiError(
+        'Invalid API key provided',
+        'AUTH_INVALID_KEY'
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(HamsaApiError);
+      expect(error.message).toBe('Invalid API key provided');
+      expect(error.messageKey).toBe('AUTH_INVALID_KEY');
+      expect(error.name).toBe('HamsaApiError');
+    });
+
+    test('should handle error with messageKey for i18n purposes', () => {
+      const error = new HamsaApiError(
+        'Rate limit exceeded',
+        'RATE_LIMIT_EXCEEDED'
+      );
+
+      // Simulate how a developer might use messageKey for i18n
+      const i18nMapping = {
+        AUTH_INVALID_KEY: 'Clé API invalide',
+        RATE_LIMIT_EXCEEDED: 'Limite de débit dépassée',
+      };
+
+      const translatedMessage =
+        error.messageKey && i18nMapping[error.messageKey]
+          ? i18nMapping[error.messageKey]
+          : error.message;
+
+      expect(translatedMessage).toBe('Limite de débit dépassée');
+      expect(error.messageKey).toBe('RATE_LIMIT_EXCEEDED');
+    });
+
+    test('should handle API errors thrown during initialization', async () => {
+      // Mock a failed token request
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: (jest.fn() as any).mockResolvedValue(
+          JSON.stringify({
+            message: 'Invalid API key',
+            messageKey: 'AUTH_INVALID_KEY',
+          })
+        ),
+      } as unknown as Response);
+
+      const errorHandler = jest.fn();
+      voiceAgent.on('error', errorHandler);
+
+      await voiceAgent.start({ agentId: 'test-agent' });
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Invalid API key',
+          messageKey: 'AUTH_INVALID_KEY',
+          name: 'HamsaApiError',
+        })
+      );
+    });
+
+    test('should handle non-JSON API errors gracefully', async () => {
+      // Mock a failed token request with non-JSON response
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: (jest.fn() as any).mockResolvedValue(
+          'Server temporarily unavailable'
+        ),
+      } as unknown as Response);
+
+      const errorHandler = jest.fn();
+      voiceAgent.on('error', errorHandler);
+
+      await voiceAgent.start({ agentId: 'test-agent' });
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '500 Internal Server Error - Server temporarily unavailable',
+          messageKey: undefined,
+          name: 'HamsaApiError',
+        })
+      );
     });
   });
 });

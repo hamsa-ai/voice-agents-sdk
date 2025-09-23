@@ -3,6 +3,15 @@ import type { Room } from 'livekit-client';
 import LiveKitManager, { type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
 /**
+ * Custom error class that includes both human-readable message and machine-readable messageKey
+ * for internationalization and programmatic error handling
+ */
+declare class HamsaApiError extends Error {
+    /** Machine-readable error key for i18n or programmatic handling */
+    readonly messageKey?: string;
+    constructor(message: string, messageKey?: string);
+}
+/**
  * Configuration options for the HamsaVoiceAgent constructor
  * Allows customization of API endpoints and other global settings
  */
@@ -775,5 +784,5 @@ declare class HamsaVoiceAgent extends EventEmitter {
      */
     getRoom(): Room | null;
 }
-export { HamsaVoiceAgent };
+export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;
