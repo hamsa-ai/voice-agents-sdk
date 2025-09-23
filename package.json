@@ -26,7 +26,8 @@
     "build": "npm run clean && npm run build:types && npm run build:rollup",
     "test": "jest",
     "test:watch": "jest --watch",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "tag:push": "VERSION=$(node -p \"require('./package.json').version\") && TAG=v$VERSION && git fetch --tags -q && if git rev-parse -q --verify \"refs/tags/$TAG\" >/dev/null; then echo \"Tag $TAG already exists locally.\"; else git tag -a \"$TAG\" -m \"Release $TAG\"; fi && if git ls-remote --exit-code --tags origin \"$TAG\" >/dev/null 2>&1; then echo \"Tag $TAG already exists on origin.\"; else git push origin \"$TAG\"; fi && echo \"Done: $TAG\""
   },
   "author": "Hamsa AI Inc.",
   "license": "MIT",
