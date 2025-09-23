@@ -174,15 +174,17 @@ describe('LiveKitManager Analytics', () => {
       const stats = manager.getConnectionStats();
 
       expect(stats).toMatchObject({
-        latency: 50,
-        packetLoss: 0.1,
-        bandwidth: 128_000,
         quality: 'good',
-        jitter: 2,
         connectionAttempts: 0,
         reconnectionAttempts: 0,
         isConnected: false,
       });
+
+      // Verify we no longer expose estimated metrics
+      expect(stats).not.toHaveProperty('latency');
+      expect(stats).not.toHaveProperty('packetLoss');
+      expect(stats).not.toHaveProperty('bandwidth');
+      expect(stats).not.toHaveProperty('jitter');
     });
 
     test('getAudioLevels should return audio metrics', () => {
@@ -204,7 +206,9 @@ describe('LiveKitManager Analytics', () => {
       const metrics = manager.getPerformanceMetrics();
 
       expect(metrics.callDuration).toBeGreaterThan(0);
-      expect(metrics.networkLatency).toBe(TEST_LATENCY_MS);
+
+      // Verify we no longer expose estimated network latency
+      expect(metrics).not.toHaveProperty('networkLatency');
     });
 
     test('getCallAnalytics should return comprehensive analytics', () => {

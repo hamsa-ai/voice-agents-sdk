@@ -298,8 +298,9 @@ describe('HamsaVoiceAgent', () => {
         info: jest.fn(),
         error: jest.fn(),
         closed: jest.fn(),
-        remoteAudioStreamAvailable: jest.fn(),
-        localAudioStreamAvailable: jest.fn(),
+        trackSubscribed: jest.fn(),
+        trackUnsubscribed: jest.fn(),
+        localTrackPublished: jest.fn(),
       };
 
       // Register all event listeners
@@ -337,14 +338,20 @@ describe('HamsaVoiceAgent', () => {
         voiceAgent.liveKitManager.emit('answerReceived', 'test answer');
         voiceAgent.liveKitManager.emit('info', { type: 'test info' });
         voiceAgent.liveKitManager.emit('disconnected');
-        voiceAgent.liveKitManager.emit(
-          'remoteAudioStreamAvailable',
-          new MediaStream()
-        );
-        voiceAgent.liveKitManager.emit(
-          'localAudioStreamAvailable',
-          new MediaStream()
-        );
+        voiceAgent.liveKitManager.emit('trackSubscribed', {
+          track: { kind: 'audio', mediaStreamTrack: {} },
+          publication: {},
+          participant: { identity: 'agent' },
+        });
+        voiceAgent.liveKitManager.emit('trackUnsubscribed', {
+          track: { kind: 'audio' },
+          publication: {},
+          participant: { identity: 'agent' },
+        });
+        voiceAgent.liveKitManager.emit('localTrackPublished', {
+          track: { source: 'microphone', mediaStreamTrack: {} },
+          publication: { source: 'microphone' },
+        });
 
         expect(events.start).toHaveBeenCalled();
         expect(events.speaking).toHaveBeenCalled();
@@ -355,8 +362,9 @@ describe('HamsaVoiceAgent', () => {
         expect(events.answerReceived).toHaveBeenCalledWith('test answer');
         expect(events.info).toHaveBeenCalledWith({ type: 'test info' });
         expect(events.closed).toHaveBeenCalled();
-        expect(events.remoteAudioStreamAvailable).toHaveBeenCalled();
-        expect(events.localAudioStreamAvailable).toHaveBeenCalled();
+        expect(events.trackSubscribed).toHaveBeenCalled();
+        expect(events.trackUnsubscribed).toHaveBeenCalled();
+        expect(events.localTrackPublished).toHaveBeenCalled();
       }
 
       // Test lifecycle events

@@ -178,7 +178,7 @@
  * - Includes automatic cleanup and resource management
  */
 import { EventEmitter } from 'events';
-import { type Room } from 'livekit-client';
+import type { Room } from 'livekit-client';
 import type { Tool } from './types';
 /**
  * LiveKitToolRegistry class for client-side tool management and RPC handling
@@ -445,71 +445,6 @@ export declare class LiveKitToolRegistry extends EventEmitter {
         text?: string;
         final?: boolean;
     }>): void;
-    /**
-     * Provides access to the local microphone audio stream for external processing
-     *
-     * Retrieves the local participant's microphone track and creates a MediaStream
-     * for external audio processing applications. This enables advanced integrations
-     * such as real-time audio analysis, recording, or additional audio effects
-     * processing outside of the LiveKit pipeline.
-     *
-     * @fires localAudioStreamAvailable When local audio stream is successfully extracted
-     *
-     * @example
-     * ```typescript
-     * // Listen for local audio stream availability
-     * registry.on('localAudioStreamAvailable', (stream) => {
-     *   console.log('Local audio stream is available');
-     *
-     *   // Set up real-time audio analysis
-     *   const audioAnalyzer = new AudioAnalyzer(stream);
-     *   audioAnalyzer.on('volumeLevel', (level) => {
-     *     updateVolumeIndicator(level);
-     *   });
-     *
-     *   // Enable noise gate functionality
-     *   const noiseGate = new NoiseGate(stream);
-     *   noiseGate.threshold = -40; // dB
-     *
-     *   // Record conversation for quality assurance
-     *   if (recordingEnabled) {
-     *     const mediaRecorder = new MediaRecorder(stream);
-     *     mediaRecorder.start();
-     *
-     *     mediaRecorder.ondataavailable = (event) => {
-     *       saveAudioChunk(event.data);
-     *     };
-     *   }
-     * });
-     *
-     * // Call after connection is established
-     * registry.emitLocalAudioStream();
-     * ```
-     *
-     * @example Audio Processing Pipeline
-     * ```typescript
-     * registry.on('localAudioStreamAvailable', (stream) => {
-     *   // Create audio context for advanced processing
-     *   const audioContext = new AudioContext();
-     *   const source = audioContext.createMediaStreamSource(stream);
-     *
-     *   // Add audio effects
-     *   const gainNode = audioContext.createGain();
-     *   const filterNode = audioContext.createBiquadFilter();
-     *
-     *   // Connect processing chain
-     *   source.connect(gainNode);
-     *   gainNode.connect(filterNode);
-     *   filterNode.connect(audioContext.destination);
-     *
-     *   // Configure effects
-     *   gainNode.gain.value = 1.2;
-     *   filterNode.type = 'highpass';
-     *   filterNode.frequency.value = 80;
-     * });
-     * ```
-     */
-    emitLocalAudioStream(): void;
     /**
      * Returns the count of currently registered tools
      *

@@ -166,6 +166,22 @@ export declare class LiveKitAnalytics extends EventEmitter {
     private room;
     /** Current connection state flag for controlling analytics collection */
     private isConnected;
+    /** Last recorded user audio level for dropout detection */
+    private lastUserAudioLevel;
+    /** Last recorded agent audio level for dropout detection */
+    private lastAgentAudioLevel;
+    /** Timestamp when user audio level dropped below threshold */
+    private userDropoutStartTime;
+    /** Timestamp when agent audio level dropped below threshold */
+    private agentDropoutStartTime;
+    /** Timestamp when user started speaking (VAD-based) */
+    private vadUserSpeakStart;
+    /** Timestamp when agent started speaking (VAD-based) */
+    private vadAgentSpeakStart;
+    /** Timestamp when user input was detected (for response time measurement) */
+    private lastUserInputTime;
+    /** Previous connection quality for jitter change detection (internal) */
+    private previousConnectionQuality;
     /**
      * Creates a new LiveKitAnalytics instance
      *
@@ -346,7 +362,7 @@ export declare class LiveKitAnalytics extends EventEmitter {
      */
     handleAudioPlaybackChanged(playing: boolean): void;
     /**
-     * Gets current connection statistics
+     * Gets current connection statistics (customer-facing - verified data only)
      */
     getConnectionStats(): ConnectionStatsResult;
     /**
@@ -354,14 +370,56 @@ export declare class LiveKitAnalytics extends EventEmitter {
      */
     getAudioLevels(): AudioLevelsResult;
     /**
-     * Gets current performance metrics
+     * Gets current performance metrics (customer-facing - verified data only)
      */
     getPerformanceMetrics(): PerformanceMetricsResult;
     /**
-     * Gets comprehensive call analytics
+     * Manually records response time for agent interactions
+     *
+     * @param responseTime - Response time in milliseconds
+     *
+     * @example
+     * ```typescript
+     * // Record custom response time measurement
+     * const startTime = Date.now();
+     * // ... agent processing ...
+     * const responseTime = Date.now() - startTime;
+     * analytics.recordResponseTime(responseTime);
+     * ```
+     */
+    recordResponseTime(responseTime: number): void;
+    /**
+     * Gets current voice activity detection thresholds
+     */
+    getVADSettings(): {
+        audioThreshold: number;
+        minSpeakingDuration: number;
+        dropoutThreshold: number;
+        dropoutDetectionDuration: number;
+    };
+    /**
+     * Gets comprehensive call analytics (customer-facing - verified data only)
      */
     getCallAnalytics(participants: ParticipantData[], trackStats: TrackStatsResult, volume: number, isPaused: boolean): CallAnalyticsResult & {
         callDuration: number;
+    };
+    /**
+     * Gets full connection statistics including estimated metrics (internal use only)
+     * @internal
+     */
+    getInternalConnectionStats(): ConnectionMetrics & {
+        connectionAttempts: number;
+        reconnectionAttempts: number;
+        connectionEstablishedTime: number;
+        isConnected: boolean;
+    };
+    /**
+     * Gets full performance metrics including estimated network latency (internal use only)
+     * @internal
+     */
+    getInternalPerformanceMetrics(): PerformanceMetrics & {
+        callDuration: number;
+        averageResponseTime: number;
     };
     /**
      * Cleans up analytics resources

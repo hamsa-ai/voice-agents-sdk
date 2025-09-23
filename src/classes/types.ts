@@ -106,18 +106,18 @@ export type CallStats = {
 
 /**
  * Real-time network connection quality metrics.
- * Provides detailed information about network performance and reliability.
+ * Internal structure includes estimated values for future use.
  */
 export type ConnectionMetrics = {
-  /** Current network latency in milliseconds */
+  /** Current network latency in milliseconds (internal - estimated) */
   latency: number;
-  /** Packet loss percentage (0.0 to 100.0) */
+  /** Packet loss percentage (internal - estimated) */
   packetLoss: number;
-  /** Current bandwidth usage in bytes per second */
+  /** Current bandwidth usage in bytes per second (internal - estimated) */
   bandwidth: number;
   /** Qualitative assessment of connection ('excellent', 'good', 'poor', 'lost') */
   quality: string;
-  /** Network jitter measurement in milliseconds */
+  /** Network jitter measurement in milliseconds (internal - estimated) */
   jitter: number;
 };
 
@@ -142,12 +142,12 @@ export type AudioMetrics = {
 
 /**
  * Performance metrics tracking response times and connection reliability.
- * Measures various aspects of system and network performance.
+ * Internal structure includes estimated network latency for future use.
  */
 export type PerformanceMetrics = {
   /** Total response time for agent interactions in milliseconds */
   responseTime: number;
-  /** Current network latency measurement in milliseconds */
+  /** Current network latency measurement in milliseconds (internal - estimated) */
   networkLatency: number;
   /** Time taken to establish the initial connection in milliseconds */
   connectionEstablishedTime: number;
@@ -157,19 +157,11 @@ export type PerformanceMetrics = {
 
 /**
  * Complete connection statistics result returned by getConnectionStats().
- * Combines real-time metrics with historical connection data.
+ * Only includes verified data - no estimated metrics exposed to customers.
  */
 export type ConnectionStatsResult = {
-  /** Current network latency in milliseconds */
-  latency: number;
-  /** Current packet loss percentage */
-  packetLoss: number;
-  /** Current bandwidth usage in bytes per second */
-  bandwidth: number;
-  /** Current connection quality assessment */
+  /** Current connection quality assessment from LiveKit */
   quality: string;
-  /** Current network jitter in milliseconds */
-  jitter: number;
   /** Total connection attempts made */
   connectionAttempts: number;
   /** Total reconnection attempts made */
@@ -209,13 +201,11 @@ export type AudioLevelsResult = {
 
 /**
  * Complete performance metrics result returned by getPerformanceMetrics().
- * Provides comprehensive system and network performance data.
+ * Only includes verified performance data - no estimated metrics exposed.
  */
 export type PerformanceMetricsResult = {
   /** Total response time in milliseconds */
   responseTime: number;
-  /** Current network latency in milliseconds */
-  networkLatency: number;
   /** Connection establishment time in milliseconds */
   connectionEstablishedTime: number;
   /** Total reconnection count */
@@ -280,10 +270,8 @@ export type ConnectionQualityData = {
   quality: ConnectionQuality;
   /** Identity of the participant this quality measurement applies to */
   participant: string;
-  /** Detailed connection metrics including latency, packet loss, etc. */
+  /** Connection quality string from LiveKit (estimated metrics available internally) */
   metrics: {
-    latency: number;
-    packetLoss: number;
     quality: string;
   };
 };

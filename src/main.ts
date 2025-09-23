@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { jwtDecode } from 'jwt-decode';
+import type { Room } from 'livekit-client';
 import LiveKitManager, {
   type AudioLevelsResult,
   type CallAnalyticsResult,
@@ -204,6 +205,32 @@ type JobDetails = {
  *
  * // Get analytics snapshot anytime
  * const analytics = agent.getCallAnalytics();
+ * ```
+ *
+ * @example Track-based Audio Processing
+ * ```typescript
+ * // Handle incoming audio tracks from voice agent
+ * agent.on('trackSubscribed', ({ track, publication, participant }) => {
+ *   if (track.kind === 'audio') {
+ *     // Option 1: Attach to DOM element (LiveKit way)
+ *     track.attach(audioElement);
+ *
+ *     // Option 2: Create MediaStream for custom processing
+ *     const stream = new MediaStream([track.mediaStreamTrack]);
+ *     const audioContext = new AudioContext();
+ *     const source = audioContext.createMediaStreamSource(stream);
+ *     // Add custom audio processing...
+ *   }
+ * });
+ *
+ * // Handle local audio track availability
+ * agent.on('localTrackPublished', ({ track, publication }) => {
+ *   if (track && track.source === 'microphone') {
+ *     // Access local microphone track for recording/analysis
+ *     const stream = new MediaStream([track.mediaStreamTrack]);
+ *     setupVoiceAnalyzer(stream);
+ *   }
+ * });
  * ```
  */
 class HamsaVoiceAgent extends EventEmitter {
@@ -618,11 +645,10 @@ class HamsaVoiceAgent extends EventEmitter {
           this.userInitiatedEnd = false;
           this.emit('closed');
         })
-        .on('remoteAudioStreamAvailable', (remoteStream) =>
-          this.emit('remoteAudioStreamAvailable', remoteStream)
-        )
-        .on('localAudioStreamAvailable', (localStream) =>
-          this.emit('localAudioStreamAvailable', localStream)
+        .on('trackSubscribed', (data) => this.emit('trackSubscribed', data))
+        .on('trackUnsubscribed', (data) => this.emit('trackUnsubscribed', data))
+        .on('localTrackPublished', (data) =>
+          this.emit('localTrackPublished', data)
         )
         .on('info', (info) => this.emit('info', info))
 
@@ -650,8 +676,6 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('connectionStateChanged', (state) =>
           this.emit('connectionStateChanged', state)
         )
-        .on('trackSubscribed', (data) => this.emit('trackSubscribed', data))
-        .on('trackUnsubscribed', (data) => this.emit('trackUnsubscribed', data))
         .on('audioPlaybackChanged', (playing) =>
           this.emit('audioPlaybackChanged', playing)
         )
@@ -1215,6 +1239,44 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   getCallAnalytics(): CallAnalyticsResult | null {
     return this.liveKitManager ? this.liveKitManager.getCallAnalytics() : null;
+  }
+
+  /**
+   * Gets the LiveKit Room instance for React SDK integration
+   *
+   * Provides access to the underlying LiveKit Room object for use with
+   * LiveKit React components. This enables integration with the broader
+   * LiveKit React ecosystem while maintaining the benefits of the
+   * HamsaVoiceAgent abstraction.
+   *
+   * @internal - For use by @hamsa-ai/voice-agents-react only
+   * @returns LiveKit Room instance or null if not connected
+   *
+   * @example React SDK Integration
+   * ```typescript
+   * import { RoomContext } from '@livekit/components-react';
+   *
+   * function VoiceProvider({ agent, children }) {
+   *   const [room, setRoom] = useState(null);
+   *
+   *   useEffect(() => {
+   *     agent.on('callStarted', () => {
+   *       setRoom(agent.getRoom());
+   *     });
+   *   }, [agent]);
+   *
+   *   if (!room) return children;
+   *
+   *   return (
+   *     <RoomContext.Provider value={room}>
+   *       {children}
+   *     </RoomContext.Provider>
+   *   );
+   * }
+   * ```
+   */
+  getRoom(): Room | null {
+    return this.liveKitManager?.connection.getRoom() ?? null;
   }
 
   /**

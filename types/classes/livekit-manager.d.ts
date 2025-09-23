@@ -314,14 +314,14 @@ export default class LiveKitManager extends EventEmitter {
     /**
      * Retrieves current network connection statistics and quality metrics
      *
-     * @returns Object containing latency, packet loss, bandwidth, quality rating, and connection counts
+     * @returns Object containing connection quality, connection counts, and timing data
      *
      * @example
      * ```typescript
      * const stats = manager.getConnectionStats();
-     * console.log(`Latency: ${stats.latency}ms`);
-     * console.log(`Packet loss: ${stats.packetLoss}%`);
      * console.log(`Connection quality: ${stats.quality}`);
+     * console.log(`Connection attempts: ${stats.connectionAttempts}`);
+     * console.log(`Reconnections: ${stats.reconnectionAttempts}`);
      *
      * if (stats.quality === 'poor') {
      *   showNetworkWarning();
@@ -354,7 +354,7 @@ export default class LiveKitManager extends EventEmitter {
     /**
      * Retrieves current performance metrics including response times and call duration
      *
-     * @returns Object containing response times, network latency, call duration, and connection timing
+     * @returns Object containing response times, call duration, and connection timing
      *
      * @example
      * ```typescript
@@ -442,7 +442,7 @@ export default class LiveKitManager extends EventEmitter {
      * });
      *
      * // Check for quality issues
-     * if (analytics.connectionStats.packetLoss > 5) {
+     * if (analytics.connectionStats.quality === 'poor') {
      *   reportNetworkIssue(analytics.connectionStats);
      * }
      * ```

@@ -353,13 +353,10 @@ const connectionStats = agent.getConnectionStats();
 console.log(connectionStats);
 /*
 {
-  latency: 45,              // Network latency in ms
-  packetLoss: 0.1,         // Packet loss percentage
-  bandwidth: 128000,       // Current bandwidth usage
   quality: 'good',         // Connection quality: excellent/good/poor/lost
-  jitter: 2,               // Network jitter
   connectionAttempts: 1,   // Total connection attempts
   reconnectionAttempts: 0, // Reconnection attempts
+  connectionEstablishedTime: 250, // Time to establish connection (ms)
   isConnected: true        // Current connection status
 }
 */
@@ -386,10 +383,10 @@ console.log(performance);
 /*
 {
   responseTime: 1200,          // Total response time
-  networkLatency: 45,          // Network round-trip time
   callDuration: 60000,         // Current call duration (ms)
   connectionEstablishedTime: 250, // Time to establish connection
-  reconnectionCount: 0         // Number of reconnections
+  reconnectionCount: 0,        // Number of reconnections
+  averageResponseTime: 1200    // Average response time
 }
 */
 
@@ -426,7 +423,7 @@ const analytics = agent.getCallAnalytics();
 console.log(analytics);
 /*
 {
-  connectionStats: { latency: 45, packetLoss: 0.1, quality: 'good', ... },
+  connectionStats: { quality: 'good', connectionAttempts: 1, isConnected: true, ... },
   audioMetrics: { userAudioLevel: 0.8, agentAudioLevel: 0.3, ... },
   performanceMetrics: { callDuration: 60000, responseTime: 1200, ... },
   participants: [{ identity: 'agent', sid: 'participant-sid', ... }],
@@ -454,8 +451,8 @@ const updateDashboard = () => {
   const performance = agent.getPerformanceMetrics();
 
   // Update UI elements
-  document.getElementById("latency").textContent = `${stats.latency}ms`;
   document.getElementById("quality").textContent = stats.quality;
+  document.getElementById("attempts").textContent = stats.connectionAttempts;
   document.getElementById("duration").textContent = `${Math.floor(
     performance.callDuration / 1000
   )}s`;
@@ -625,7 +622,7 @@ await agent.start({
 
 // Strongly typed event handlers
 agent.on("analyticsUpdated", (analytics: CallAnalyticsResult) => {
-  console.log(analytics.connectionStats.latency); // number
+  console.log(analytics.connectionStats.quality); // string
   console.log(analytics.audioMetrics.userAudioLevel); // number
   console.log(analytics.performanceMetrics.callDuration); // number
   console.log(analytics.participants.length); // number

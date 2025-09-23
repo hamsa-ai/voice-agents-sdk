@@ -35,13 +35,14 @@
 import { EventEmitter } from 'events';
 import type {
   ConnectionQuality,
+  LocalTrackPublication,
   Participant,
   RemoteParticipant,
   RemoteTrack,
   RemoteTrackPublication,
   Room,
 } from 'livekit-client';
-import { RoomEvent, Track } from 'livekit-client';
+import { RoomEvent } from 'livekit-client';
 
 import { LiveKitAnalytics } from './livekit-analytics';
 import { LiveKitAudioManager } from './livekit-audio-manager';
@@ -445,14 +446,14 @@ export default class LiveKitManager extends EventEmitter {
   /**
    * Retrieves current network connection statistics and quality metrics
    *
-   * @returns Object containing latency, packet loss, bandwidth, quality rating, and connection counts
+   * @returns Object containing connection quality, connection counts, and timing data
    *
    * @example
    * ```typescript
    * const stats = manager.getConnectionStats();
-   * console.log(`Latency: ${stats.latency}ms`);
-   * console.log(`Packet loss: ${stats.packetLoss}%`);
    * console.log(`Connection quality: ${stats.quality}`);
+   * console.log(`Connection attempts: ${stats.connectionAttempts}`);
+   * console.log(`Reconnections: ${stats.reconnectionAttempts}`);
    *
    * if (stats.quality === 'poor') {
    *   showNetworkWarning();
@@ -493,7 +494,7 @@ export default class LiveKitManager extends EventEmitter {
   /**
    * Retrieves current performance metrics including response times and call duration
    *
-   * @returns Object containing response times, network latency, call duration, and connection timing
+   * @returns Object containing response times, call duration, and connection timing
    *
    * @example
    * ```typescript
@@ -590,7 +591,7 @@ export default class LiveKitManager extends EventEmitter {
    * });
    *
    * // Check for quality issues
-   * if (analytics.connectionStats.packetLoss > 5) {
+   * if (analytics.connectionStats.quality === 'poor') {
    *   reportNetworkIssue(analytics.connectionStats);
    * }
    * ```
@@ -697,8 +698,7 @@ export default class LiveKitManager extends EventEmitter {
       // Begin periodic analytics data collection
       this.analytics.startAnalyticsCollection();
 
-      // Make local audio stream available for external use
-      this.toolRegistry.emitLocalAudioStream();
+      // Local tracks will be exposed via localTrackPublished event when they become available
 
       // Setup WebRTC event handlers that require module coordination
       this.#setupRoomEventHandlers();
@@ -852,10 +852,8 @@ export default class LiveKitManager extends EventEmitter {
       this.emit('dataReceived', message, participant)
     );
 
-    // Forward audio stream events for external audio processing
-    this.toolRegistry.on('localAudioStreamAvailable', (stream) =>
-      this.emit('localAudioStreamAvailable', stream)
-    );
+    // Local audio tracks are now exposed via localTrackPublished event
+    // No need for stream-specific forwarding
 
     // Forward tool registration confirmations for debugging
     this.toolRegistry.on('toolsRegistered', (count) =>
@@ -902,11 +900,12 @@ export default class LiveKitManager extends EventEmitter {
             participant
           );
 
-          // Make remote audio stream available for external audio processing
-          if (track.kind === Track.Kind.Audio && track.mediaStreamTrack) {
-            const stream = new MediaStream([track.mediaStreamTrack]);
-            this.emit('remoteAudioStreamAvailable', stream);
-          }
+          // Forward track subscription event with full track data
+          this.emit('trackSubscribed', {
+            track,
+            publication,
+            participant,
+          });
         },
       ],
       [
@@ -922,6 +921,13 @@ export default class LiveKitManager extends EventEmitter {
             publication,
             participant
           );
+
+          // Forward track unsubscription event with full track data
+          this.emit('trackUnsubscribed', {
+            track,
+            publication,
+            participant,
+          });
         },
       ],
       [
@@ -957,6 +963,16 @@ export default class LiveKitManager extends EventEmitter {
         (error: Error) => {
           // Forward media device errors for external error handling
           this.emit('mediaDevicesError', error);
+        },
+      ],
+      [
+        RoomEvent.LocalTrackPublished,
+        (publication: LocalTrackPublication) => {
+          // Forward local track publication event with track data
+          this.emit('localTrackPublished', {
+            publication,
+            track: publication.track,
+          });
         },
       ],
     ];

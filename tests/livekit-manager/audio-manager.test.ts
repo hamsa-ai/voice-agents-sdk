@@ -27,7 +27,7 @@ describe('LiveKitManager - Audio Management', () => {
     test('should handle track subscribed event for audio', () => {
       const { liveKitManager, mockRoom } = context;
       const remoteAudioSpy = jest.fn();
-      liveKitManager.on('remoteAudioStreamAvailable', remoteAudioSpy);
+      liveKitManager.on('trackSubscribed', remoteAudioSpy);
 
       const mockTrack = createMockAudioTrack();
 

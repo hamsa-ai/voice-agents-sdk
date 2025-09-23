@@ -36,24 +36,28 @@ describe('Enhanced LiveKit Analytics', () => {
   });
 
   describe('WebRTC Statistics Processing', () => {
-    test('should have enhanced WebRTC stats structure', async () => {
+    test('should maintain internal analytics structure for future use', async () => {
       await liveKitManager.connect();
 
       // Verify that the room is created
       expect(liveKitManager.room).toBeDefined();
 
-      // Verify enhanced stats structure exists
+      // Verify call stats structure exists (real data)
       expect(liveKitManager.callStats).toHaveProperty('totalBytesReceived');
       expect(liveKitManager.callStats).toHaveProperty('totalBytesSent');
       expect(liveKitManager.callStats).toHaveProperty('packetsLost');
+
+      // Verify internal connection metrics still exist (for future use)
       expect(liveKitManager.connectionMetrics).toHaveProperty('latency');
       expect(liveKitManager.connectionMetrics).toHaveProperty('bandwidth');
       expect(liveKitManager.connectionMetrics).toHaveProperty('jitter');
+      expect(liveKitManager.connectionMetrics).toHaveProperty('quality');
 
-      // Verify all properties are numbers (initialized to 0)
+      // Verify all properties are correct types
       expect(typeof liveKitManager.callStats.totalBytesReceived).toBe('number');
       expect(typeof liveKitManager.callStats.totalBytesSent).toBe('number');
       expect(typeof liveKitManager.connectionMetrics.jitter).toBe('number');
+      expect(typeof liveKitManager.connectionMetrics.quality).toBe('string');
     });
 
     test('should handle stats errors gracefully', async () => {
@@ -65,63 +69,80 @@ describe('Enhanced LiveKit Analytics', () => {
       expect(analytics.connectionStats).toBeDefined();
     });
 
-    test('should have proper analytics structure', () => {
+    test('should expose only real data through customer API', () => {
       const connectionStats = liveKitManager.getConnectionStats();
       const audioLevels = liveKitManager.getAudioLevels();
       const performanceMetrics = liveKitManager.getPerformanceMetrics();
 
-      // Verify enhanced structure
-      expect(connectionStats).toHaveProperty('jitter');
-      expect(connectionStats).toHaveProperty('bandwidth');
-      expect(connectionStats.jitter).toBeGreaterThanOrEqual(0);
-      expect(connectionStats.bandwidth).toBeGreaterThanOrEqual(0);
+      // Verify customer API only returns real data
+      expect(connectionStats).toHaveProperty('quality');
+      expect(connectionStats).toHaveProperty('connectionAttempts');
+      expect(connectionStats).toHaveProperty('isConnected');
+      expect(connectionStats).toHaveProperty('connectionEstablishedTime');
+
+      // Verify estimated metrics are NOT exposed to customers
+      expect(connectionStats).not.toHaveProperty('jitter');
+      expect(connectionStats).not.toHaveProperty('bandwidth');
+      expect(connectionStats).not.toHaveProperty('latency');
+      expect(connectionStats).not.toHaveProperty('packetLoss');
 
       expect(audioLevels).toHaveProperty('userAudioLevel');
       expect(audioLevels).toHaveProperty('agentAudioLevel');
 
-      expect(performanceMetrics).toHaveProperty('networkLatency');
+      // Performance metrics should not expose estimated network latency
+      expect(performanceMetrics).not.toHaveProperty('networkLatency');
+      expect(performanceMetrics).toHaveProperty('responseTime');
+      expect(performanceMetrics).toHaveProperty('callDuration');
     });
   });
 
   describe('Enhanced Connection Quality Handling', () => {
-    test('should provide comprehensive connection statistics', () => {
+    test('should provide only verified connection statistics to customers', () => {
       const stats = liveKitManager.getConnectionStats();
 
-      // Verify all expected properties exist
-      expect(stats).toHaveProperty('latency');
-      expect(stats).toHaveProperty('packetLoss');
-      expect(stats).toHaveProperty('bandwidth');
+      // Verify only real properties are exposed to customers
       expect(stats).toHaveProperty('quality');
-      expect(stats).toHaveProperty('jitter');
       expect(stats).toHaveProperty('connectionAttempts');
       expect(stats).toHaveProperty('reconnectionAttempts');
       expect(stats).toHaveProperty('connectionEstablishedTime');
       expect(stats).toHaveProperty('isConnected');
 
-      // Verify types
-      expect(typeof stats.latency).toBe('number');
-      expect(typeof stats.packetLoss).toBe('number');
-      expect(typeof stats.bandwidth).toBe('number');
+      // Verify estimated metrics are NOT exposed
+      expect(stats).not.toHaveProperty('latency');
+      expect(stats).not.toHaveProperty('packetLoss');
+      expect(stats).not.toHaveProperty('bandwidth');
+      expect(stats).not.toHaveProperty('jitter');
+
+      // Verify types of real data
       expect(typeof stats.quality).toBe('string');
-      expect(typeof stats.jitter).toBe('number');
+      expect(typeof stats.connectionAttempts).toBe('number');
       expect(typeof stats.isConnected).toBe('boolean');
     });
 
-    test('should handle connection metrics updates', () => {
-      // Test setting metrics directly (simulating what would happen from LiveKit events)
+    test('should handle internal metrics updates while keeping customer API clean', () => {
+      // Test setting internal metrics directly (simulating what would happen from LiveKit events)
       liveKitManager.connectionMetrics.latency = TEST_LATENCY_MS;
       liveKitManager.connectionMetrics.packetLoss = TEST_PACKET_LOSS;
       liveKitManager.connectionMetrics.bandwidth = TEST_BANDWIDTH;
       liveKitManager.connectionMetrics.quality = 'good';
       liveKitManager.connectionMetrics.jitter = TEST_JITTER_MS;
 
-      const stats = liveKitManager.getConnectionStats();
+      // Verify internal metrics are updated
+      expect(liveKitManager.connectionMetrics.latency).toBe(TEST_LATENCY_MS);
+      expect(liveKitManager.connectionMetrics.packetLoss).toBe(
+        TEST_PACKET_LOSS
+      );
+      expect(liveKitManager.connectionMetrics.bandwidth).toBe(TEST_BANDWIDTH);
+      expect(liveKitManager.connectionMetrics.quality).toBe('good');
+      expect(liveKitManager.connectionMetrics.jitter).toBe(TEST_JITTER_MS);
 
-      expect(stats.latency).toBe(TEST_LATENCY_MS);
-      expect(stats.packetLoss).toBe(TEST_PACKET_LOSS);
-      expect(stats.bandwidth).toBe(TEST_BANDWIDTH);
+      // But customer API still only shows real data
+      const stats = liveKitManager.getConnectionStats();
       expect(stats.quality).toBe('good');
-      expect(stats.jitter).toBe(TEST_JITTER_MS);
+      expect(stats).not.toHaveProperty('latency');
+      expect(stats).not.toHaveProperty('packetLoss');
+      expect(stats).not.toHaveProperty('bandwidth');
+      expect(stats).not.toHaveProperty('jitter');
     });
   });
 
@@ -277,16 +298,22 @@ describe('Enhanced LiveKit Analytics', () => {
       const trackStats = voiceAgent.getTrackStats();
       const callAnalytics = voiceAgent.getCallAnalytics();
 
-      // Verify they return the expected structure
-      expect(connectionStats).toHaveProperty('latency');
-      expect(connectionStats).toHaveProperty('packetLoss');
-      expect(connectionStats).toHaveProperty('bandwidth');
-      expect(connectionStats).toHaveProperty('jitter');
+      // Verify they return only real data structure (no estimated metrics)
+      expect(connectionStats).toHaveProperty('quality');
+      expect(connectionStats).toHaveProperty('connectionAttempts');
+      expect(connectionStats).toHaveProperty('isConnected');
+
+      // Verify estimated metrics are NOT exposed to customers
+      expect(connectionStats).not.toHaveProperty('latency');
+      expect(connectionStats).not.toHaveProperty('packetLoss');
+      expect(connectionStats).not.toHaveProperty('bandwidth');
+      expect(connectionStats).not.toHaveProperty('jitter');
 
       expect(audioLevels).toHaveProperty('userAudioLevel');
       expect(audioLevels).toHaveProperty('agentAudioLevel');
 
-      expect(performanceMetrics).toHaveProperty('networkLatency');
+      // Performance metrics should not expose estimated network latency
+      expect(performanceMetrics).not.toHaveProperty('networkLatency');
       expect(performanceMetrics).toHaveProperty('callDuration');
 
       expect(Array.isArray(participants)).toBe(true);
