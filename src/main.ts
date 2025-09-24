@@ -653,9 +653,11 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('speaking', () => this.emit('speaking'))
         .on('listening', () => this.emit('listening'))
         .on('disconnected', () => {
+          // Always emit callEnded when connection ends, regardless of who initiated it
+          this.emit('callEnded');
+          this.emit('closed');
           // Reset the flag when fully disconnected
           this.userInitiatedEnd = false;
-          this.emit('closed');
         })
         .on('trackSubscribed', (data) => this.emit('trackSubscribed', data))
         .on('trackUnsubscribed', (data) => this.emit('trackUnsubscribed', data))
