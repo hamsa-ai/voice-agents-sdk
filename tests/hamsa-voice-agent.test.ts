@@ -74,13 +74,14 @@ describe('HamsaVoiceAgent', () => {
 
       expect(fetch).toHaveBeenNthCalledWith(
         1,
-        `${mockConfig.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=test-agent`,
+        `${mockConfig.API_URL}/v1/voice-agents/room/participant-token`,
         expect.objectContaining({
-          method: 'GET',
+          method: 'POST',
           headers: expect.objectContaining({
             Authorization: `Token ${mockApiKey}`,
             'Content-Type': 'application/json',
           }),
+          body: expect.stringContaining('"voiceAgentId":"test-agent"'),
         })
       );
 
@@ -138,8 +139,11 @@ describe('HamsaVoiceAgent', () => {
 
       expect(fetch).toHaveBeenNthCalledWith(
         1,
-        `${mockConfig.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=test-agent`,
-        expect.objectContaining({ method: 'GET' })
+        `${mockConfig.API_URL}/v1/voice-agents/room/participant-token`,
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"voiceAgentId":"test-agent"'),
+        })
       );
       expect(fetch).toHaveBeenNthCalledWith(
         2,

@@ -958,7 +958,11 @@ class HamsaVoiceAgent extends EventEmitter {
     };
 
     // Step 1: Get LiveKit participant token
-    const tokenData = await this.#fetchParticipantToken(voiceAgentId, headers);
+    const tokenData = await this.#fetchParticipantToken(
+      voiceAgentId,
+      params,
+      headers
+    );
     const liveKitAccessToken = tokenData.liveKitAccessToken;
     const jobIdFromToken = this.#resolveJobIdFromToken(
       liveKitAccessToken,
@@ -1018,13 +1022,15 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   async #fetchParticipantToken(
     voiceAgentId: string,
+    params: Record<string, unknown>,
     headers: Record<string, string>
   ): Promise<{ liveKitAccessToken: string; jobId?: string }> {
     const tokenResponse = await fetch(
-      `${this.API_URL}/v1/voice-agents/room/participant-token?voiceAgentId=${voiceAgentId}`,
+      `${this.API_URL}/v1/voice-agents/room/participant-token`,
       {
-        method: 'GET',
+        method: 'POST',
         headers,
+        body: JSON.stringify({ voiceAgentId, params }),
       }
     );
 
