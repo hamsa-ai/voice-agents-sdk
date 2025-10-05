@@ -1,6 +1,15 @@
 import { EventEmitter } from 'events';
 import { jwtDecode } from 'jwt-decode';
-import type { Room } from 'livekit-client';
+import type {
+  ConnectionState,
+  LocalTrack,
+  LocalTrackPublication,
+  Participant,
+  RemoteParticipant,
+  RemoteTrack,
+  RemoteTrackPublication,
+  Room,
+} from 'livekit-client';
 import LiveKitManager, {
   type AudioLevelsResult,
   type CallAnalyticsResult,
@@ -145,11 +154,119 @@ type JobDetails = {
 };
 
 /**
+ * Event handler signatures for HamsaVoiceAgent
+ *
+ * Defines the type-safe interface for all events emitted by the HamsaVoiceAgent.
+ * Each event specifies its exact handler signature, enabling full type safety
+ * and IntelliSense support when using the event emitter API.
+ *
+ * @example
+ * ```typescript
+ * // Fully type-safe event handlers
+ * agent.on('transcriptionReceived', (text: string) => {
+ *   console.log('User said:', text);
+ * });
+ *
+ * agent.on('connectionQualityChanged', ({ quality, metrics }) => {
+ *   if (quality === 'poor') {
+ *     showNetworkWarning(metrics);
+ *   }
+ * });
+ * ```
+ */
+type HamsaVoiceAgentEvents = {
+  // Connection lifecycle events
+  /** Emitted when connection is established (before call fully starts) */
+  start: () => void;
+  /** Emitted when call is fully started and ready */
+  callStarted: () => void;
+  /** Emitted when call ends (user or agent initiated) */
+  callEnded: () => void;
+  /** Emitted when call is paused */
+  callPaused: () => void;
+  /** Emitted when call is resumed */
+  callResumed: () => void;
+  /** Emitted when connection is closed */
+  closed: () => void;
+  /** Emitted when attempting to reconnect */
+  reconnecting: () => void;
+  /** Emitted when reconnection succeeds */
+  reconnected: () => void;
+
+  // Conversation events
+  /** Emitted when user speech is transcribed */
+  transcriptionReceived: (text: string) => void;
+  /** Emitted when agent response is received */
+  answerReceived: (text: string) => void;
+  /** Emitted when agent starts speaking */
+  speaking: () => void;
+  /** Emitted when agent is listening */
+  listening: () => void;
+
+  // Error events
+  /** Emitted when an error occurs */
+  error: (error: Error | HamsaApiError) => void;
+
+  // Track events
+  /** Emitted when a remote track is subscribed */
+  trackSubscribed: (data: {
+    track: RemoteTrack;
+    publication: RemoteTrackPublication;
+    participant: RemoteParticipant;
+  }) => void;
+  /** Emitted when a remote track is unsubscribed */
+  trackUnsubscribed: (data: {
+    track: RemoteTrack;
+    publication: RemoteTrackPublication;
+    participant: RemoteParticipant;
+  }) => void;
+  /** Emitted when a local track is published */
+  localTrackPublished: (data: {
+    track?: LocalTrack;
+    publication: LocalTrackPublication;
+  }) => void;
+
+  // Analytics events
+  /** Emitted when analytics data is updated */
+  analyticsUpdated: (analytics: CallAnalyticsResult) => void;
+  /** Emitted when connection quality changes */
+  connectionQualityChanged: (data: {
+    quality: 'excellent' | 'good' | 'poor';
+    metrics: ConnectionStatsResult;
+  }) => void;
+  /** Emitted when connection state changes */
+  connectionStateChanged: (state: ConnectionState) => void;
+  /** Emitted when audio playback state changes */
+  audioPlaybackChanged: (playing: boolean) => void;
+
+  // Participant events
+  /** Emitted when a participant connects */
+  participantConnected: (participant: RemoteParticipant) => void;
+  /** Emitted when a participant disconnects */
+  participantDisconnected: (participant: RemoteParticipant) => void;
+
+  // Data events
+  /** Emitted when data is received */
+  dataReceived: (message: Uint8Array, participant: Participant) => void;
+  /** Emitted for custom events */
+  customEvent: (
+    eventType: string,
+    eventData: unknown,
+    metadata?: Record<string, unknown>
+  ) => void;
+  /** Emitted for informational messages */
+  info: (info: string) => void;
+};
+
+/**
  * HamsaVoiceAgent - Main SDK class for voice agent integration
  *
  * This class provides the primary interface for integrating Hamsa voice agents
  * into web applications. It handles authentication, connection management,
  * conversation lifecycle, analytics, and client-side tool execution.
+ *
+ * Note: This class uses declaration merging with an interface (defined below)
+ * to provide type-safe event handlers. This is intentional and safe.
  *
  * Key features:
  * - Real-time voice communication with AI agents
@@ -248,6 +365,7 @@ type JobDetails = {
  * });
  * ```
  */
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: Intentional declaration merging for type-safe events
 class HamsaVoiceAgent extends EventEmitter {
   /** Default fallback output volume when not connected */
   private static readonly DEFAULT_OUTPUT_VOLUME = 0.0;
@@ -1376,6 +1494,76 @@ class HamsaVoiceAgent extends EventEmitter {
   }
 }
 
+/**
+ * Declaration merging: Add type-safe event methods to HamsaVoiceAgent
+ *
+ * This interface merges with the HamsaVoiceAgent class to provide fully
+ * typed event handler methods without requiring explicit type assertions.
+ *
+ * @example
+ * ```typescript
+ * const agent = new HamsaVoiceAgent('api_key');
+ *
+ * // ✅ Fully type-safe - no casting needed!
+ * agent.on('transcriptionReceived', (text) => {
+ *   console.log(text); // text is inferred as string
+ * });
+ *
+ * // ❌ Type error - wrong event name
+ * agent.on('wrongEvent', () => {});
+ *
+ * // ❌ Type error - wrong handler signature
+ * agent.on('transcriptionReceived', () => {}); // Missing parameter
+ * ```
+ */
+// biome-ignore lint/nursery/useConsistentTypeDefinitions: Interface required for declaration merging with class
+interface HamsaVoiceAgent {
+  /**
+   * Registers an event listener with type-safe event names and handlers
+   */
+  on<K extends keyof HamsaVoiceAgentEvents>(
+    event: K,
+    listener: HamsaVoiceAgentEvents[K]
+  ): this;
+
+  /**
+   * Removes an event listener with type-safe event names and handlers
+   */
+  off<K extends keyof HamsaVoiceAgentEvents>(
+    event: K,
+    listener: HamsaVoiceAgentEvents[K]
+  ): this;
+
+  /**
+   * Registers a one-time event listener with type-safe event names and handlers
+   */
+  once<K extends keyof HamsaVoiceAgentEvents>(
+    event: K,
+    listener: HamsaVoiceAgentEvents[K]
+  ): this;
+
+  /**
+   * Emits an event with type-safe event names and arguments
+   */
+  emit<K extends keyof HamsaVoiceAgentEvents>(
+    event: K,
+    ...args: Parameters<HamsaVoiceAgentEvents[K]>
+  ): boolean;
+}
+
 // Support both named and default exports
 export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;
+
+// Export types from LiveKitManager directly
+export type {
+  AudioLevelsResult,
+  CallAnalyticsResult,
+  ConnectionStatsResult,
+  ParticipantData,
+  PerformanceMetricsResult,
+  TrackStatsResult,
+} from './classes/livekit-manager';
+
+// Export event types for type-safe event handling
+export type { HamsaVoiceAgentEvents, StartOptions, Tool, JobDetails };
