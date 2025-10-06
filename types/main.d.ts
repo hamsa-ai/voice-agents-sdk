@@ -3,6 +3,11 @@ import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, R
 import LiveKitManager, { type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
 /**
+ * Agent state as defined by LiveKit
+ * Represents the current state of the voice agent
+ */
+export type AgentState = 'idle' | 'initializing' | 'listening' | 'thinking' | 'speaking';
+/**
  * Custom error class that includes both human-readable message and machine-readable messageKey
  * for internationalization and programmatic error handling
  */
@@ -143,6 +148,8 @@ type HamsaVoiceAgentEvents = {
     speaking: () => void;
     /** Emitted when agent is listening */
     listening: () => void;
+    /** Emitted when agent state changes (idle, initializing, listening, thinking, speaking) */
+    agentStateChanged: (state: AgentState) => void;
     /** Emitted when an error occurs */
     error: (error: Error | HamsaApiError) => void;
     /** Emitted when a remote track is subscribed */

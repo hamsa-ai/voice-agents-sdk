@@ -786,6 +786,11 @@ export default class LiveKitManager extends EventEmitter {
       this.emit('participantDisconnected', participant)
     );
 
+    // Forward agent state changes for tracking agent behavior (listening, thinking, speaking)
+    this.connection.on('agentStateChanged', (state) =>
+      this.emit('agentStateChanged', state)
+    );
+
     // Forward connection state and error events for external error handling
     this.connection.on('connectionStateChanged', (state) =>
       this.emit('connectionStateChanged', state)

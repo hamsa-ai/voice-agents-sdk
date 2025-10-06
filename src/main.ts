@@ -22,6 +22,17 @@ import ScreenWakeLock from './classes/screen-wake-lock';
 import type { LiveKitTokenPayload } from './classes/types';
 
 /**
+ * Agent state as defined by LiveKit
+ * Represents the current state of the voice agent
+ */
+export type AgentState =
+  | 'idle'
+  | 'initializing'
+  | 'listening'
+  | 'thinking'
+  | 'speaking';
+
+/**
  * Custom error class that includes both human-readable message and machine-readable messageKey
  * for internationalization and programmatic error handling
  */
@@ -202,6 +213,8 @@ type HamsaVoiceAgentEvents = {
   speaking: () => void;
   /** Emitted when agent is listening */
   listening: () => void;
+  /** Emitted when agent state changes (idle, initializing, listening, thinking, speaking) */
+  agentStateChanged: (state: AgentState) => void;
 
   // Error events
   /** Emitted when an error occurs */
@@ -802,6 +815,9 @@ class HamsaVoiceAgent extends EventEmitter {
             this.emit('callEnded');
           }
         })
+        .on('agentStateChanged', (state) =>
+          this.emit('agentStateChanged', state)
+        )
         .on('connectionQualityChanged', (data) =>
           this.emit('connectionQualityChanged', data)
         )
