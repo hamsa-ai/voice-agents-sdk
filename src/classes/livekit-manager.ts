@@ -50,6 +50,7 @@ import { LiveKitConnection } from './livekit-connection';
 import { LiveKitToolRegistry } from './livekit-tool-registry';
 
 import type {
+  AgentState,
   AudioLevelsResult,
   CallAnalyticsResult,
   ConnectionStatsResult,
@@ -61,6 +62,7 @@ import type {
 
 // Re-export types for external consumption
 export type {
+  AgentState,
   AudioLevelsResult,
   CallAnalyticsResult,
   ConnectionStatsResult,
@@ -787,7 +789,7 @@ export default class LiveKitManager extends EventEmitter {
     );
 
     // Forward agent state changes for tracking agent behavior (listening, thinking, speaking)
-    this.connection.on('agentStateChanged', (state) =>
+    this.connection.on('agentStateChanged', (state: AgentState) =>
       this.emit('agentStateChanged', state)
     );
 

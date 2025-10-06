@@ -38,7 +38,7 @@ import { LiveKitAudioManager } from './livekit-audio-manager';
 import { LiveKitConnection } from './livekit-connection';
 import { LiveKitToolRegistry } from './livekit-tool-registry';
 import type { AudioLevelsResult, CallAnalyticsResult, ConnectionStatsResult, ParticipantData, PerformanceMetricsResult, Tool, TrackStatsResult } from './types';
-export type { AudioLevelsResult, CallAnalyticsResult, ConnectionStatsResult, ParticipantData, PerformanceMetricsResult, TrackStatsData, TrackStatsResult, } from './types';
+export type { AgentState, AudioLevelsResult, CallAnalyticsResult, ConnectionStatsResult, ParticipantData, PerformanceMetricsResult, TrackStatsData, TrackStatsResult, } from './types';
 /**
  * Main LiveKitManager class that orchestrates voice agent communication
  *

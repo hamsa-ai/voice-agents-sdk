@@ -8,6 +8,17 @@ import type {
 } from 'livekit-client';
 
 /**
+ * Agent state as defined by LiveKit
+ * Represents the current state of the voice agent
+ */
+export type AgentState =
+  | 'idle'
+  | 'initializing'
+  | 'listening'
+  | 'thinking'
+  | 'speaking';
+
+/**
  * Function signature for client-side tools that can be executed by the agent.
  * Tools can be synchronous or asynchronous and accept variable arguments.
  */

@@ -161,7 +161,6 @@
 import { EventEmitter } from 'events';
 import {
   type ConnectionState,
-  type LocalParticipant,
   type RemoteParticipant,
   Room,
   RoomEvent,
@@ -581,13 +580,14 @@ export class LiveKitConnection extends EventEmitter {
    * Monitors the 'lk.agent.state' attribute to track agent state changes
    */
   #handleParticipantAttributesChanged(
-    changedAttributes: Record<string, string>,
-    participant: RemoteParticipant | LocalParticipant
+    changedAttributes: Record<string, string>
   ): void {
     // Check if the agent state attribute changed
     if ('lk.agent.state' in changedAttributes) {
-      const agentState = participant.attributes['lk.agent.state'];
-      this.emit('agentStateChanged', agentState);
+      const agentState = changedAttributes['lk.agent.state'];
+      if (agentState !== undefined) {
+        this.emit('agentStateChanged', agentState);
+      }
     }
   }
 

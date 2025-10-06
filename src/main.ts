@@ -11,6 +11,7 @@ import type {
   Room,
 } from 'livekit-client';
 import LiveKitManager, {
+  type AgentState,
   type AudioLevelsResult,
   type CallAnalyticsResult,
   type ConnectionStatsResult,
@@ -21,16 +22,8 @@ import LiveKitManager, {
 import ScreenWakeLock from './classes/screen-wake-lock';
 import type { LiveKitTokenPayload } from './classes/types';
 
-/**
- * Agent state as defined by LiveKit
- * Represents the current state of the voice agent
- */
-export type AgentState =
-  | 'idle'
-  | 'initializing'
-  | 'listening'
-  | 'thinking'
-  | 'speaking';
+// Re-export AgentState for convenience
+export type { AgentState } from './classes/livekit-manager';
 
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
