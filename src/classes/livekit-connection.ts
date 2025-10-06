@@ -582,13 +582,8 @@ export class LiveKitConnection extends EventEmitter {
    */
   #handleParticipantAttributesChanged(
     changedAttributes: Record<string, string>,
-    participant: Participant
+    _participant: Participant
   ): void {
-    // Only process agent state changes for agent participants
-    if (!participant.isAgent) {
-      return;
-    }
-
     // Check if the agent state attribute changed
     if ('lk.agent.state' in changedAttributes) {
       const agentState = changedAttributes['lk.agent.state'];
