@@ -254,6 +254,12 @@ agent.on("speaking", () => {
 agent.on("listening", () => {
   console.log("The agent is listening");
 });
+
+// Unified agent state change event
+agent.on("agentStateChanged", (state) => {
+  console.log("Agent state:", state);
+  // state can be: 'idle', 'initializing', 'listening', 'thinking', 'speaking'
+});
 ```
 
 ### Conversation Script Events
@@ -579,6 +585,7 @@ The SDK includes comprehensive TypeScript definitions with detailed analytics in
 ```typescript
 import {
   HamsaVoiceAgent,
+  AgentState,
   CallAnalyticsResult,
   ParticipantData,
   CustomEventMetadata,
@@ -637,6 +644,16 @@ agent.on("micUnmuted", () => {
   console.log("Microphone was unmuted");
 });
 
+// Agent state tracking with type safety
+agent.on("agentStateChanged", (state: AgentState) => {
+  console.log("Agent state:", state); // 'idle' | 'initializing' | 'listening' | 'thinking' | 'speaking'
+
+  // TypeScript provides autocomplete and type checking
+  if (state === 'thinking') {
+    showThinkingIndicator();
+  }
+});
+
 // Strongly typed custom events
 agent.on(
   "customEvent",
@@ -654,6 +671,41 @@ agent.on("participantConnected", (participant: ParticipantData) => {
 ```
 
 ## Use Cases
+
+### Agent State UI Updates
+
+```javascript
+agent.on("agentStateChanged", (state) => {
+  // Update UI based on agent state
+  const statusElement = document.getElementById("agent-status");
+
+  switch (state) {
+    case 'idle':
+      statusElement.textContent = "Agent is idle";
+      statusElement.className = "status-idle";
+      break;
+    case 'initializing':
+      statusElement.textContent = "Agent is starting...";
+      statusElement.className = "status-initializing";
+      break;
+    case 'listening':
+      statusElement.textContent = "Agent is listening";
+      statusElement.className = "status-listening";
+      showMicrophoneAnimation();
+      break;
+    case 'thinking':
+      statusElement.textContent = "Agent is thinking...";
+      statusElement.className = "status-thinking";
+      showThinkingAnimation();
+      break;
+    case 'speaking':
+      statusElement.textContent = "Agent is speaking";
+      statusElement.className = "status-speaking";
+      showSpeakerAnimation();
+      break;
+  }
+});
+```
 
 ### Real-time Call Quality Monitoring
 
