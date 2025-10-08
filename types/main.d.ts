@@ -19,6 +19,8 @@ declare class HamsaApiError extends Error {
 type HamsaVoiceAgentConfig = {
     /** Base URL for the Hamsa API. Defaults to 'https://api.tryhamsa.com' */
     API_URL?: string;
+    /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
+    LIVEKIT_URL?: string;
 };
 /**
  * Configuration options for starting a voice agent conversation
@@ -306,6 +308,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
     apiKey: string;
     /** Base URL for Hamsa API endpoints */
     API_URL: string;
+    /** LiveKit RTC WebSocket URL */
+    LIVEKIT_URL: string;
     /** Job ID for tracking conversation completion status */
     jobId: string | null;
     /** Screen wake lock manager to prevent device sleep during calls */
@@ -318,21 +322,23 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com)
      * @param config - Optional configuration settings
      * @param config.API_URL - Custom API endpoint URL (defaults to https://api.tryhamsa.com)
+     * @param config.LIVEKIT_URL - Custom LiveKit RTC URL (defaults to wss://rtc.eu.tryhamsa.com)
      *
      * @example
      * ```typescript
-     * // Using default API endpoint
+     * // Using default endpoints
      * const agent = new HamsaVoiceAgent('hamsa_api_key_here');
      *
-     * // Using custom API endpoint
+     * // Using custom endpoints
      * const agent = new HamsaVoiceAgent('hamsa_api_key_here', {
-     *   API_URL: 'https://custom-api.example.com'
+     *   API_URL: 'https://custom-api.example.com',
+     *   LIVEKIT_URL: 'wss://custom-rtc.example.com'
      * });
      * ```
      *
      * @throws {Error} If apiKey is not provided or invalid
      */
-    constructor(apiKey: string, { API_URL }?: HamsaVoiceAgentConfig);
+    constructor(apiKey: string, { API_URL, LIVEKIT_URL, }?: HamsaVoiceAgentConfig);
     /**
      * Adjusts the volume level for voice agent audio playback
      *

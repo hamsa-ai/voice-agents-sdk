@@ -47,6 +47,8 @@ class HamsaApiError extends Error {
 type HamsaVoiceAgentConfig = {
   /** Base URL for the Hamsa API. Defaults to 'https://api.tryhamsa.com' */
   API_URL?: string;
+  /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
+  LIVEKIT_URL?: string;
 };
 
 /**
@@ -386,6 +388,9 @@ class HamsaVoiceAgent extends EventEmitter {
   /** Base URL for Hamsa API endpoints */
   API_URL: string;
 
+  /** LiveKit RTC WebSocket URL */
+  LIVEKIT_URL: string;
+
   /** Job ID for tracking conversation completion status */
   jobId: string | null = null;
 
@@ -402,15 +407,17 @@ class HamsaVoiceAgent extends EventEmitter {
    * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com)
    * @param config - Optional configuration settings
    * @param config.API_URL - Custom API endpoint URL (defaults to https://api.tryhamsa.com)
+   * @param config.LIVEKIT_URL - Custom LiveKit RTC URL (defaults to wss://rtc.eu.tryhamsa.com)
    *
    * @example
    * ```typescript
-   * // Using default API endpoint
+   * // Using default endpoints
    * const agent = new HamsaVoiceAgent('hamsa_api_key_here');
    *
-   * // Using custom API endpoint
+   * // Using custom endpoints
    * const agent = new HamsaVoiceAgent('hamsa_api_key_here', {
-   *   API_URL: 'https://custom-api.example.com'
+   *   API_URL: 'https://custom-api.example.com',
+   *   LIVEKIT_URL: 'wss://custom-rtc.example.com'
    * });
    * ```
    *
@@ -418,12 +425,16 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   constructor(
     apiKey: string,
-    { API_URL = 'https://api.tryhamsa.com' }: HamsaVoiceAgentConfig = {}
+    {
+      API_URL = 'https://api.tryhamsa.com',
+      LIVEKIT_URL = 'wss://rtc.eu.tryhamsa.com',
+    }: HamsaVoiceAgentConfig = {}
   ) {
     super();
     this.liveKitManager = null;
     this.apiKey = apiKey;
     this.API_URL = API_URL;
+    this.LIVEKIT_URL = LIVEKIT_URL;
     this.jobId = null;
     this.wakeLockManager = new ScreenWakeLock();
   }
@@ -761,7 +772,7 @@ class HamsaVoiceAgent extends EventEmitter {
 
       // Create LiveKitManager instance
       this.liveKitManager = new LiveKitManager(
-        'wss://rtc.eu.tryhamsa.com',
+        this.LIVEKIT_URL,
         accessToken,
         tools
       );
