@@ -761,7 +761,7 @@ class HamsaVoiceAgent extends EventEmitter {
 
       // Create LiveKitManager instance
       this.liveKitManager = new LiveKitManager(
-        'wss://rtc.tryhamsa.com',
+        'wss://rtc.eu.tryhamsa.com',
         accessToken,
         tools
       );
