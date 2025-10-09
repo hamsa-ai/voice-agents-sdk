@@ -882,6 +882,37 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * ```
      */
     getRoom(): Room | null;
+    /**
+     * Gets the remote audio track from the voice agent for visualization
+     *
+     * Provides access to the agent's audio track for use with LiveKit React
+     * visualization components like BarVisualizer. Returns undefined if not
+     * connected or no remote audio track is available.
+     *
+     * @returns RemoteTrack | undefined - The agent's audio track or undefined if not available
+     *
+     * @example With LiveKit BarVisualizer
+     * ```typescript
+     * import { BarVisualizer } from '@livekit/components-react';
+     *
+     * function AgentVisualizer({ agent }) {
+     *   const [audioTrack, setAudioTrack] = useState();
+     *
+     *   useEffect(() => {
+     *     agent.on('trackSubscribed', ({ track }) => {
+     *       if (track.kind === 'audio') {
+     *         setAudioTrack(track);
+     *       }
+     *     });
+     *   }, [agent]);
+     *
+     *   if (!audioTrack) return null;
+     *
+     *   return <BarVisualizer trackRef={{ track: audioTrack, source: 'microphone' }} />;
+     * }
+     * ```
+     */
+    getRemoteAudioTrack(): RemoteTrack | undefined;
 }
 /**
  * Declaration merging: Add type-safe event methods to HamsaVoiceAgent
@@ -925,5 +956,6 @@ interface HamsaVoiceAgent {
 }
 export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;
+export type { LocalTrack, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Room, } from 'livekit-client';
 export type { AudioLevelsResult, CallAnalyticsResult, ConnectionStatsResult, ParticipantData, PerformanceMetricsResult, TrackStatsResult, } from './classes/livekit-manager';
 export type { HamsaVoiceAgentEvents, StartOptions, Tool, JobDetails };

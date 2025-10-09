@@ -1504,6 +1504,56 @@ class HamsaVoiceAgent extends EventEmitter {
   }
 
   /**
+   * Gets the remote audio track from the voice agent for visualization
+   *
+   * Provides access to the agent's audio track for use with LiveKit React
+   * visualization components like BarVisualizer. Returns undefined if not
+   * connected or no remote audio track is available.
+   *
+   * @returns RemoteTrack | undefined - The agent's audio track or undefined if not available
+   *
+   * @example With LiveKit BarVisualizer
+   * ```typescript
+   * import { BarVisualizer } from '@livekit/components-react';
+   *
+   * function AgentVisualizer({ agent }) {
+   *   const [audioTrack, setAudioTrack] = useState();
+   *
+   *   useEffect(() => {
+   *     agent.on('trackSubscribed', ({ track }) => {
+   *       if (track.kind === 'audio') {
+   *         setAudioTrack(track);
+   *       }
+   *     });
+   *   }, [agent]);
+   *
+   *   if (!audioTrack) return null;
+   *
+   *   return <BarVisualizer trackRef={{ track: audioTrack, source: 'microphone' }} />;
+   * }
+   * ```
+   */
+  getRemoteAudioTrack(): RemoteTrack | undefined {
+    const room = this.liveKitManager?.connection.getRoom();
+    if (!room?.remoteParticipants) {
+      return;
+    }
+
+    // Find the first remote participant with an audio track
+    for (const participant of room.remoteParticipants.values()) {
+      const audioPublication = Array.from(
+        participant.audioTrackPublications.values()
+      )[0];
+
+      if (audioPublication?.track) {
+        return audioPublication.track;
+      }
+    }
+
+    return;
+  }
+
+  /**
    * Delays execution for a specified amount of time.
    * @private
    * @param ms - Milliseconds to delay.
@@ -1575,6 +1625,14 @@ interface HamsaVoiceAgent {
 export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;
 
+// Export LiveKit types for use with React components
+export type {
+  LocalTrack,
+  RemoteParticipant,
+  RemoteTrack,
+  RemoteTrackPublication,
+  Room,
+} from 'livekit-client';
 // Export types from LiveKitManager directly
 export type {
   AudioLevelsResult,
