@@ -956,6 +956,6 @@ interface HamsaVoiceAgent {
 }
 export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;
-export type { LocalTrack, RemoteTrack, RemoteTrackPublication, RemoteParticipant, Room, } from 'livekit-client';
+export type { LocalTrack, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Room, } from 'livekit-client';
 export type { AudioLevelsResult, CallAnalyticsResult, ConnectionStatsResult, ParticipantData, PerformanceMetricsResult, TrackStatsResult, } from './classes/livekit-manager';
 export type { HamsaVoiceAgentEvents, StartOptions, Tool, JobDetails };
