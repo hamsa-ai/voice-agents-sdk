@@ -397,6 +397,10 @@ class HamsaVoiceAgent extends EventEmitter {
   /** Screen wake lock manager to prevent device sleep during calls */
   wakeLockManager: ScreenWakeLock;
 
+  /** Flag to track if the user initiated the call end to prevent duplicate disconnection logic */
+  // biome-ignore lint/style/useReadonlyClassProperties: userInitiatedEnd is reassigned during call lifecycle
+  private userInitiatedEnd = false;
+
   /**
    * Creates a new HamsaVoiceAgent instance
    *
@@ -755,6 +759,9 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
   }: StartOptions): Promise<void> {
     try {
+      // Reset user-initiated end flag for new call
+      this.userInitiatedEnd = false;
+
       // Get LiveKit access token
       const accessToken = await this.#initializeLiveKitConversation(
         agentId,
@@ -784,6 +791,8 @@ class HamsaVoiceAgent extends EventEmitter {
           // Always emit callEnded when connection ends
           this.emit('callEnded');
           this.emit('closed');
+          // Reset the flag when fully disconnected
+          this.userInitiatedEnd = false;
         })
         .on('trackSubscribed', (data) => this.emit('trackSubscribed', data))
         .on('trackUnsubscribed', (data) => this.emit('trackUnsubscribed', data))
@@ -802,7 +811,11 @@ class HamsaVoiceAgent extends EventEmitter {
           this.emit('participantDisconnected', participant);
 
           // If agent disconnects and only 1 participant remains (the user), disconnect
-          if (participant.identity?.includes('agent')) {
+          // But only if the user didn't already initiate the end
+          if (
+            participant.identity?.includes('agent') &&
+            !this.userInitiatedEnd
+          ) {
             // Check remaining participants (excluding the one that just disconnected)
             const remainingParticipants =
               this.liveKitManager?.connection.participants.size ?? 0;
@@ -894,6 +907,7 @@ class HamsaVoiceAgent extends EventEmitter {
   end(): void {
     try {
       if (this.liveKitManager) {
+        this.userInitiatedEnd = true; // Mark as user-initiated to prevent recursive calls
         this.liveKitManager.disconnect();
         this.emit('callEnded');
       }
