@@ -302,6 +302,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
     private static readonly DEFAULT_OUTPUT_VOLUME;
     /** Default fallback input volume when not connected */
     private static readonly DEFAULT_INPUT_VOLUME;
+    /** Delay in milliseconds before auto-disconnect when agent leaves (allows LiveKit cleanup) */
+    private static readonly AGENT_DISCONNECT_DELAY_MS;
     /** Internal LiveKit manager instance for WebRTC communication */
     liveKitManager: LiveKitManager | null;
     /** Hamsa API key for authentication */
@@ -314,7 +316,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
     jobId: string | null;
     /** Screen wake lock manager to prevent device sleep during calls */
     wakeLockManager: ScreenWakeLock;
-    /** Flag to track if the user initiated the call end */
+    /** Flag to track if the user initiated the call end to prevent duplicate disconnection logic */
     private userInitiatedEnd;
     /**
      * Creates a new HamsaVoiceAgent instance
