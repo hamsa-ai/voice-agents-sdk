@@ -379,6 +379,8 @@ class HamsaVoiceAgent extends EventEmitter {
   private static readonly DEFAULT_OUTPUT_VOLUME = 0.0;
   /** Default fallback input volume when not connected */
   private static readonly DEFAULT_INPUT_VOLUME = 0.0;
+  /** Delay in milliseconds before auto-disconnect when agent leaves (allows LiveKit cleanup) */
+  private static readonly AGENT_DISCONNECT_DELAY_MS = 100;
   /** Internal LiveKit manager instance for WebRTC communication */
   liveKitManager: LiveKitManager | null = null;
 
@@ -820,9 +822,27 @@ class HamsaVoiceAgent extends EventEmitter {
             const remainingParticipants =
               this.liveKitManager?.connection.participants.size ?? 0;
 
+            // Log for debugging
+            // biome-ignore lint/suspicious/noConsole: Debugging information for disconnect logic
+            console.log(
+              `Agent disconnected. Remaining participants: ${remainingParticipants}`,
+              this.liveKitManager?.connection.participants
+            );
+
             // If only the user is left (0 remote participants after agent left), disconnect
+            // Use a small delay to ensure LiveKit's internal cleanup is complete
             if (remainingParticipants === 0) {
-              this.end();
+              setTimeout(() => {
+                // Double-check we're still connected before calling end()
+                if (
+                  this.liveKitManager?.isConnected &&
+                  !this.userInitiatedEnd
+                ) {
+                  // biome-ignore lint/suspicious/noConsole: Debugging information for auto-disconnect
+                  console.log('Auto-disconnecting: user is alone in room');
+                  this.end();
+                }
+              }, HamsaVoiceAgent.AGENT_DISCONNECT_DELAY_MS);
             }
           }
         })
