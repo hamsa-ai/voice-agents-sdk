@@ -972,7 +972,6 @@ class HamsaVoiceAgent extends EventEmitter {
     try {
       // biome-ignore lint/suspicious/noConsole: Track when end() is called and from where
       console.log('[DISCONNECT DEBUG] end() called', {
-        // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging, not an actual error
         stack: new Error('Stack trace').stack,
         userInitiatedEnd: this.userInitiatedEnd,
       });

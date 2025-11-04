@@ -378,7 +378,6 @@ export class LiveKitConnection extends EventEmitter {
       console.log('[LIVEKIT DEBUG] connect() called', {
         lkUrl: this.lkUrl,
         attempt: this.connectionAttempts + 1,
-        // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging
         stack: new Error('Connection call stack').stack,
       });
 
@@ -417,7 +416,6 @@ export class LiveKitConnection extends EventEmitter {
       // biome-ignore lint/suspicious/noConsole: Critical error logging
       console.error('[LIVEKIT DEBUG] connect() failed', {
         error: error instanceof Error ? error.message : String(error),
-        // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging
         stack: error instanceof Error ? error.stack : undefined,
       });
 
@@ -450,7 +448,6 @@ export class LiveKitConnection extends EventEmitter {
         roomName: this.room?.name,
         state: this.room?.state,
         participantCount: this.participants.size,
-        // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging
         stack: new Error('Disconnect call stack').stack,
       });
 
@@ -468,7 +465,6 @@ export class LiveKitConnection extends EventEmitter {
       // biome-ignore lint/suspicious/noConsole: Critical error logging
       console.error('[LIVEKIT DEBUG] disconnect() failed', {
         error: error instanceof Error ? error.message : String(error),
-        // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging
         stack: error instanceof Error ? error.stack : undefined,
       });
 
@@ -747,7 +743,6 @@ export class LiveKitConnection extends EventEmitter {
     // biome-ignore lint/suspicious/noConsole: Critical debugging for media errors
     console.error('[LIVEKIT DEBUG] Media devices error', {
       error: error.message,
-      // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging
       stack: error.stack,
       roomName: this.room?.name,
     });
