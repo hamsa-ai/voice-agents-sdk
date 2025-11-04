@@ -21,6 +21,7 @@ import LiveKitManager, {
 } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
 import type { LiveKitTokenPayload } from './classes/types';
+import { createDebugLogger, type DebugLogger } from './utils';
 
 // Re-export AgentState for convenience
 export type { AgentState } from './classes/livekit-manager';
@@ -406,6 +407,9 @@ class HamsaVoiceAgent extends EventEmitter {
   // biome-ignore lint/style/useReadonlyClassProperties: userInitiatedEnd is reassigned during call lifecycle
   private userInitiatedEnd = false;
 
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
+
   /**
    * Creates a new HamsaVoiceAgent instance
    *
@@ -442,6 +446,7 @@ class HamsaVoiceAgent extends EventEmitter {
     this.API_URL = API_URL;
     this.LIVEKIT_URL = LIVEKIT_URL;
     this.debug = debug;
+    this.logger = createDebugLogger(debug);
     this.jobId = null;
     this.wakeLockManager = new ScreenWakeLock();
   }
@@ -766,12 +771,9 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
   }: StartOptions): Promise<void> {
     try {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Verify SDK version is loaded with debug logs
-        console.log(
-          '[DISCONNECT DEBUG] SDK initialized - disconnect debugging enabled'
-        );
-      }
+      this.logger.log('SDK initialized - disconnect debugging enabled', {
+        source: 'HamsaVoiceAgent',
+      });
 
       // Reset user-initiated end flag for new call
       this.userInitiatedEnd = false;
@@ -803,12 +805,9 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('speaking', () => this.emit('speaking'))
         .on('listening', () => this.emit('listening'))
         .on('disconnected', () => {
-          if (this.debug) {
-            // biome-ignore lint/suspicious/noConsole: Critical debugging for disconnect path
-            console.log(
-              '[DISCONNECT DEBUG] disconnected event fired - room connection closed'
-            );
-          }
+          this.logger.log('disconnected event fired - room connection closed', {
+            source: 'HamsaVoiceAgent',
+          });
           // Always emit callEnded when connection ends
           this.emit('callEnded');
           this.emit('closed');
@@ -826,26 +825,26 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('reconnecting', () => this.emit('reconnecting'))
         .on('reconnected', () => this.emit('reconnected'))
         .on('participantConnected', (participant) => {
-          if (this.debug) {
-            // biome-ignore lint/suspicious/noConsole: Debugging participant connection
-            console.log('[DISCONNECT DEBUG] Participant connected:', {
+          this.logger.log('Participant connected', {
+            source: 'HamsaVoiceAgent',
+            error: {
               identity: participant.identity,
               sid: participant.sid,
-            });
-          }
+            },
+          });
           this.emit('participantConnected', participant);
         })
         .on('participantDisconnected', (participant) => {
-          if (this.debug) {
-            // biome-ignore lint/suspicious/noConsole: Debugging participant disconnection
-            console.log('[DISCONNECT DEBUG] Participant disconnected:', {
+          this.logger.log('Participant disconnected', {
+            source: 'HamsaVoiceAgent',
+            error: {
               identity: participant.identity,
               sid: participant.sid,
               hasAgentInIdentity: participant.identity?.includes('agent'),
               remainingCount:
                 this.liveKitManager?.connection.participants.size ?? 0,
-            });
-          }
+            },
+          });
 
           this.emit('participantDisconnected', participant);
         })
@@ -929,13 +928,13 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   end(): void {
     try {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Track when end() is called and from where
-        console.log('[DISCONNECT DEBUG] end() called', {
+      this.logger.log('end() called', {
+        source: 'HamsaVoiceAgent',
+        error: {
           stack: new Error('Stack trace').stack,
           userInitiatedEnd: this.userInitiatedEnd,
-        });
-      }
+        },
+      });
 
       if (this.liveKitManager) {
         this.userInitiatedEnd = true; // Mark as user-initiated to prevent recursive calls
