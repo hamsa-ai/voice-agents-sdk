@@ -188,6 +188,8 @@ export declare class LiveKitConnection extends EventEmitter {
     private reconnectionAttempts;
     /** Whether we've already emitted a 'connected' event for the current session */
     private hasEmittedConnected;
+    /** Enable debug logging for troubleshooting */
+    private readonly debug;
     /**
      * Creates a new LiveKitConnection instance
      *
@@ -197,19 +199,21 @@ export declare class LiveKitConnection extends EventEmitter {
      *
      * @param lkUrl - LiveKit WebSocket URL (e.g., 'wss://livekit.example.com')
      * @param accessToken - JWT token for room authentication and authorization
+     * @param debug - Enable debug logging (defaults to false)
      *
      * @example
      * ```typescript
      * const connection = new LiveKitConnection(
      *   'wss://rtc.eu.tryhamsa.com',
-     *   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+     *   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+     *   false
      * );
      *
      * // Connection is ready for use
      * await connection.connect();
      * ```
      */
-    constructor(lkUrl: string, accessToken: string);
+    constructor(lkUrl: string, accessToken: string, debug?: boolean);
     /**
      * Provides access to the underlying LiveKit room instance
      *
