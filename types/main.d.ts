@@ -21,6 +21,8 @@ type HamsaVoiceAgentConfig = {
     API_URL?: string;
     /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
     LIVEKIT_URL?: string;
+    /** Enable debug logging for troubleshooting. Defaults to false */
+    debug?: boolean;
 };
 /**
  * Configuration options for starting a voice agent conversation
@@ -302,8 +304,6 @@ declare class HamsaVoiceAgent extends EventEmitter {
     private static readonly DEFAULT_OUTPUT_VOLUME;
     /** Default fallback input volume when not connected */
     private static readonly DEFAULT_INPUT_VOLUME;
-    /** Delay in milliseconds before auto-disconnect when agent leaves (allows LiveKit cleanup) */
-    private static readonly AGENT_DISCONNECT_DELAY_MS;
     /** Internal LiveKit manager instance for WebRTC communication */
     liveKitManager: LiveKitManager | null;
     /** Hamsa API key for authentication */
@@ -312,6 +312,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
     API_URL: string;
     /** LiveKit RTC WebSocket URL */
     LIVEKIT_URL: string;
+    /** Enable debug logging for troubleshooting */
+    debug: boolean;
     /** Job ID for tracking conversation completion status */
     jobId: string | null;
     /** Screen wake lock manager to prevent device sleep during calls */
@@ -340,7 +342,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
      *
      * @throws {Error} If apiKey is not provided or invalid
      */
-    constructor(apiKey: string, { API_URL, LIVEKIT_URL, }?: HamsaVoiceAgentConfig);
+    constructor(apiKey: string, { API_URL, LIVEKIT_URL, debug, }?: HamsaVoiceAgentConfig);
     /**
      * Adjusts the volume level for voice agent audio playback
      *

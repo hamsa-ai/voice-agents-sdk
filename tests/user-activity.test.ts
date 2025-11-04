@@ -9,7 +9,6 @@ const EXPECTED_INTEGRATION_CALLS = 5;
 const EXPECTED_MAINTAIN_STATE_CALLS = 6;
 const RAPID_MIXED_CALLS = 20;
 const NON_STRING_NUMBER = 123;
-const SDK_DEBUG_LOGS_COUNT = 3; // SDK init (1) + connect start/complete (2)
 
 // Mock console.log to test log outputs
 const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
@@ -71,9 +70,7 @@ describe('User Activity and Contextual Updates', () => {
         voiceAgent.sendUserActivity();
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(
-        RAPID_CALLS_COUNT + SDK_DEBUG_LOGS_COUNT
-      ); // SDK init + connect logs
+      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_CALLS_COUNT);
       expect(consoleSpy).toHaveBeenCalledWith(
         'User activity detected - preventing agent interruption'
       );
@@ -83,7 +80,7 @@ describe('User Activity and Contextual Updates', () => {
       // Initial connection
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledTimes(1 + SDK_DEBUG_LOGS_COUNT); // User activity + SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
 
       // End and restart
       await voiceAgent.end();
@@ -145,9 +142,7 @@ describe('User Activity and Contextual Updates', () => {
         voiceAgent.sendContextualUpdate(context);
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(
-        contexts.length + SDK_DEBUG_LOGS_COUNT
-      ); // SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(contexts.length);
       for (const context of contexts) {
         expect(consoleSpy).toHaveBeenCalledWith(
           'Sending contextual update:',
@@ -171,16 +166,14 @@ describe('User Activity and Contextual Updates', () => {
         expect(() => voiceAgent.sendContextualUpdate(context)).not.toThrow();
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(
-        specialContexts.length + SDK_DEBUG_LOGS_COUNT
-      ); // SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(specialContexts.length);
     });
 
     test('should work correctly after disconnection and reconnection', async () => {
       // Initial connection
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendContextualUpdate('Initial context');
-      expect(consoleSpy).toHaveBeenCalledTimes(1 + SDK_DEBUG_LOGS_COUNT); // Contextual update + SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
 
       // End and restart
       await voiceAgent.end();
@@ -210,9 +203,7 @@ describe('User Activity and Contextual Updates', () => {
       voiceAgent.sendContextualUpdate('User scrolled to bottom');
       voiceAgent.sendUserActivity();
 
-      expect(consoleSpy).toHaveBeenCalledTimes(
-        EXPECTED_INTEGRATION_CALLS + SDK_DEBUG_LOGS_COUNT
-      ); // SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_INTEGRATION_CALLS);
       expect(consoleSpy).toHaveBeenCalledWith(
         'User activity detected - preventing agent interruption'
       );
@@ -241,9 +232,7 @@ describe('User Activity and Contextual Updates', () => {
       voiceAgent.sendUserActivity(); // User selects suggestion
       voiceAgent.sendContextualUpdate('User selected "premium plan"');
 
-      expect(consoleSpy).toHaveBeenCalledTimes(
-        EXPECTED_MAINTAIN_STATE_CALLS + SDK_DEBUG_LOGS_COUNT
-      ); // SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_MAINTAIN_STATE_CALLS);
 
       // Verify the methods don't interfere with each other
       expect(() => {
@@ -264,9 +253,7 @@ describe('User Activity and Contextual Updates', () => {
         }
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(
-        RAPID_MIXED_CALLS + SDK_DEBUG_LOGS_COUNT
-      ); // SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_MIXED_CALLS);
 
       // Verify no errors occurred
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -319,7 +306,7 @@ describe('User Activity and Contextual Updates', () => {
 
       // Should work when connected
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledTimes(1 + SDK_DEBUG_LOGS_COUNT); // User activity + SDK debug logs
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
 
       // Simulate connection loss
       if (voiceAgent.liveKitManager) {

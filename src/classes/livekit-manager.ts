@@ -121,14 +121,19 @@ export default class LiveKitManager extends EventEmitter {
    * );
    * ```
    */
-  constructor(lkUrl: string, accessToken: string, tools: Tool[] = []) {
+  constructor(
+    lkUrl: string,
+    accessToken: string,
+    tools: Tool[] = [],
+    debug = false
+  ) {
     super();
 
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
 
     // Initialize specialized modules with their specific responsibilities
-    this.connection = new LiveKitConnection(lkUrl, accessToken);
+    this.connection = new LiveKitConnection(lkUrl, accessToken, debug);
     this.analytics = new LiveKitAnalytics();
     this.audioManager = new LiveKitAudioManager();
     this.toolRegistry = new LiveKitToolRegistry(tools);
