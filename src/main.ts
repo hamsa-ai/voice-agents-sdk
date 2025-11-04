@@ -761,6 +761,11 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
   }: StartOptions): Promise<void> {
     try {
+      // biome-ignore lint/suspicious/noConsole: Verify SDK version is loaded with debug logs
+      console.log(
+        '[DISCONNECT DEBUG] SDK initialized - disconnect debugging enabled'
+      );
+
       // Reset user-initiated end flag for new call
       this.userInitiatedEnd = false;
 
@@ -790,6 +795,10 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('speaking', () => this.emit('speaking'))
         .on('listening', () => this.emit('listening'))
         .on('disconnected', () => {
+          // biome-ignore lint/suspicious/noConsole: Critical debugging for disconnect path
+          console.log(
+            '[DISCONNECT DEBUG] disconnected event fired - room connection closed'
+          );
           // Always emit callEnded when connection ends
           this.emit('callEnded');
           this.emit('closed');
@@ -806,11 +815,30 @@ class HamsaVoiceAgent extends EventEmitter {
         // Forward new analytics events
         .on('reconnecting', () => this.emit('reconnecting'))
         .on('reconnected', () => this.emit('reconnected'))
-        .on('participantConnected', (participant) =>
-          this.emit('participantConnected', participant)
-        )
+        .on('participantConnected', (participant) => {
+          // biome-ignore lint/suspicious/noConsole: Debugging participant connection
+          console.log('[DISCONNECT DEBUG] Participant connected:', {
+            identity: participant.identity,
+            sid: participant.sid,
+          });
+          this.emit('participantConnected', participant);
+        })
         .on('participantDisconnected', (participant) => {
           this.emit('participantDisconnected', participant);
+
+          // DETAILED LOGGING for debugging prod issue
+          // biome-ignore lint/suspicious/noConsole: Critical debugging for prod disconnect issue
+          console.log('[DISCONNECT DEBUG] Participant disconnected:', {
+            identity: participant.identity,
+            sid: participant.sid,
+            hasAgentInIdentity: participant.identity?.includes('agent'),
+            userInitiatedEnd: this.userInitiatedEnd,
+            allParticipants: Array.from(
+              this.liveKitManager?.connection.participants.values() || []
+            ).map((p) => ({ identity: p.identity, sid: p.sid })),
+            remainingCount:
+              this.liveKitManager?.connection.participants.size ?? 0,
+          });
 
           // If agent disconnects and only 1 participant remains (the user), disconnect
           // But only if the user didn't already initiate the end
@@ -822,16 +850,19 @@ class HamsaVoiceAgent extends EventEmitter {
             const remainingParticipants =
               this.liveKitManager?.connection.participants.size ?? 0;
 
-            // Log for debugging
             // biome-ignore lint/suspicious/noConsole: Debugging information for disconnect logic
             console.log(
-              `Agent disconnected. Remaining participants: ${remainingParticipants}`,
-              this.liveKitManager?.connection.participants
+              `[DISCONNECT DEBUG] Agent with identity "${participant.identity}" left. Remaining: ${remainingParticipants}`
             );
 
             // If only the user is left (0 remote participants after agent left), disconnect
             // Use a small delay to ensure LiveKit's internal cleanup is complete
             if (remainingParticipants === 0) {
+              // biome-ignore lint/suspicious/noConsole: Critical decision point logging
+              console.log(
+                '[DISCONNECT DEBUG] Will auto-disconnect in 100ms (no other participants remain)'
+              );
+
               setTimeout(() => {
                 // Double-check we're still connected before calling end()
                 if (
@@ -839,10 +870,23 @@ class HamsaVoiceAgent extends EventEmitter {
                   !this.userInitiatedEnd
                 ) {
                   // biome-ignore lint/suspicious/noConsole: Debugging information for auto-disconnect
-                  console.log('Auto-disconnecting: user is alone in room');
+                  console.log(
+                    '[DISCONNECT DEBUG] Auto-disconnecting: user is alone in room'
+                  );
                   this.end();
+                } else {
+                  // biome-ignore lint/suspicious/noConsole: Debug why we didn't disconnect
+                  console.log('[DISCONNECT DEBUG] Skipped auto-disconnect:', {
+                    isConnected: this.liveKitManager?.isConnected,
+                    userInitiatedEnd: this.userInitiatedEnd,
+                  });
                 }
               }, HamsaVoiceAgent.AGENT_DISCONNECT_DELAY_MS);
+            } else {
+              // biome-ignore lint/suspicious/noConsole: Debug why we're staying connected
+              console.log(
+                `[DISCONNECT DEBUG] NOT auto-disconnecting: ${remainingParticipants} participant(s) still in room`
+              );
             }
           }
         })
@@ -926,6 +970,12 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   end(): void {
     try {
+      // biome-ignore lint/suspicious/noConsole: Track when end() is called and from where
+      console.log('[DISCONNECT DEBUG] end() called', {
+        stack: new Error('Stack trace').stack,
+        userInitiatedEnd: this.userInitiatedEnd,
+      });
+
       if (this.liveKitManager) {
         this.userInitiatedEnd = true; // Mark as user-initiated to prevent recursive calls
         this.liveKitManager.disconnect();
