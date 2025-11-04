@@ -761,6 +761,11 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
   }: StartOptions): Promise<void> {
     try {
+      // biome-ignore lint/suspicious/noConsole: Verify SDK version is loaded with debug logs
+      console.log(
+        '[DISCONNECT DEBUG] SDK initialized - disconnect debugging enabled'
+      );
+
       // Reset user-initiated end flag for new call
       this.userInitiatedEnd = false;
 
@@ -790,6 +795,10 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('speaking', () => this.emit('speaking'))
         .on('listening', () => this.emit('listening'))
         .on('disconnected', () => {
+          // biome-ignore lint/suspicious/noConsole: Critical debugging for disconnect path
+          console.log(
+            '[DISCONNECT DEBUG] disconnected event fired - room connection closed'
+          );
           // Always emit callEnded when connection ends
           this.emit('callEnded');
           this.emit('closed');
@@ -806,9 +815,14 @@ class HamsaVoiceAgent extends EventEmitter {
         // Forward new analytics events
         .on('reconnecting', () => this.emit('reconnecting'))
         .on('reconnected', () => this.emit('reconnected'))
-        .on('participantConnected', (participant) =>
-          this.emit('participantConnected', participant)
-        )
+        .on('participantConnected', (participant) => {
+          // biome-ignore lint/suspicious/noConsole: Debugging participant connection
+          console.log('[DISCONNECT DEBUG] Participant connected:', {
+            identity: participant.identity,
+            sid: participant.sid,
+          });
+          this.emit('participantConnected', participant);
+        })
         .on('participantDisconnected', (participant) => {
           this.emit('participantDisconnected', participant);
 
@@ -956,6 +970,13 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   end(): void {
     try {
+      // biome-ignore lint/suspicious/noConsole: Track when end() is called and from where
+      console.log('[DISCONNECT DEBUG] end() called', {
+        // biome-ignore lint/suspicious/useErrorMessage: Stack trace for debugging, not an actual error
+        stack: new Error('Stack trace').stack,
+        userInitiatedEnd: this.userInitiatedEnd,
+      });
+
       if (this.liveKitManager) {
         this.userInitiatedEnd = true; // Mark as user-initiated to prevent recursive calls
         this.liveKitManager.disconnect();

@@ -70,7 +70,7 @@ describe('User Activity and Contextual Updates', () => {
         voiceAgent.sendUserActivity();
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_CALLS_COUNT);
+      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_CALLS_COUNT + 1); // +1 for SDK init log
       expect(consoleSpy).toHaveBeenCalledWith(
         'User activity detected - preventing agent interruption'
       );
@@ -80,7 +80,7 @@ describe('User Activity and Contextual Updates', () => {
       // Initial connection
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).toHaveBeenCalledTimes(2); // SDK init + user activity
 
       // End and restart
       await voiceAgent.end();
@@ -142,7 +142,7 @@ describe('User Activity and Contextual Updates', () => {
         voiceAgent.sendContextualUpdate(context);
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(contexts.length);
+      expect(consoleSpy).toHaveBeenCalledTimes(contexts.length + 1); // +1 for SDK init log
       for (const context of contexts) {
         expect(consoleSpy).toHaveBeenCalledWith(
           'Sending contextual update:',
@@ -166,14 +166,14 @@ describe('User Activity and Contextual Updates', () => {
         expect(() => voiceAgent.sendContextualUpdate(context)).not.toThrow();
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(specialContexts.length);
+      expect(consoleSpy).toHaveBeenCalledTimes(specialContexts.length + 1); // +1 for SDK init log
     });
 
     test('should work correctly after disconnection and reconnection', async () => {
       // Initial connection
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendContextualUpdate('Initial context');
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).toHaveBeenCalledTimes(2); // SDK init + contextual update
 
       // End and restart
       await voiceAgent.end();
@@ -203,7 +203,7 @@ describe('User Activity and Contextual Updates', () => {
       voiceAgent.sendContextualUpdate('User scrolled to bottom');
       voiceAgent.sendUserActivity();
 
-      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_INTEGRATION_CALLS);
+      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_INTEGRATION_CALLS + 1); // +1 for SDK init log
       expect(consoleSpy).toHaveBeenCalledWith(
         'User activity detected - preventing agent interruption'
       );
@@ -232,7 +232,9 @@ describe('User Activity and Contextual Updates', () => {
       voiceAgent.sendUserActivity(); // User selects suggestion
       voiceAgent.sendContextualUpdate('User selected "premium plan"');
 
-      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_MAINTAIN_STATE_CALLS);
+      expect(consoleSpy).toHaveBeenCalledTimes(
+        EXPECTED_MAINTAIN_STATE_CALLS + 1
+      ); // +1 for SDK init log
 
       // Verify the methods don't interfere with each other
       expect(() => {
@@ -253,7 +255,7 @@ describe('User Activity and Contextual Updates', () => {
         }
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_MIXED_CALLS);
+      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_MIXED_CALLS + 1); // +1 for SDK init log
 
       // Verify no errors occurred
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -306,7 +308,7 @@ describe('User Activity and Contextual Updates', () => {
 
       // Should work when connected
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).toHaveBeenCalledTimes(2); // SDK init + user activity
 
       // Simulate connection loss
       if (voiceAgent.liveKitManager) {
