@@ -320,6 +320,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
     wakeLockManager: ScreenWakeLock;
     /** Flag to track if the user initiated the call end to prevent duplicate disconnection logic */
     private userInitiatedEnd;
+    /** Debug logger instance for conditional logging */
+    private readonly logger;
     /**
      * Creates a new HamsaVoiceAgent instance
      *

@@ -188,8 +188,8 @@ export declare class LiveKitConnection extends EventEmitter {
     private reconnectionAttempts;
     /** Whether we've already emitted a 'connected' event for the current session */
     private hasEmittedConnected;
-    /** Enable debug logging for troubleshooting */
-    private readonly debug;
+    /** Debug logger instance for conditional logging */
+    private readonly logger;
     /**
      * Creates a new LiveKitConnection instance
      *

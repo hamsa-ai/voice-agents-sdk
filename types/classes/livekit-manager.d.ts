@@ -33,6 +33,7 @@
  */
 import { EventEmitter } from 'events';
 import type { Room } from 'livekit-client';
+import { type DebugLogger } from '../utils';
 import { LiveKitAnalytics } from './livekit-analytics';
 import { LiveKitAudioManager } from './livekit-audio-manager';
 import { LiveKitConnection } from './livekit-connection';
@@ -59,6 +60,8 @@ export default class LiveKitManager extends EventEmitter {
     lkUrl: string;
     /** JWT access token for authentication */
     accessToken: string;
+    /** Debug logger instance for conditional logging */
+    logger: DebugLogger;
     /**
      * Creates a new LiveKitManager instance
      *

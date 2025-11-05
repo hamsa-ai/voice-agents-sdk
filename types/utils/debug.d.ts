@@ -13,15 +13,15 @@
  * ```
  */
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-interface LogOptions {
+type LogOptions = {
     source?: string;
     level?: LogLevel;
     error?: unknown;
-}
+};
 /**
  * Debug logger interface
  */
-export interface DebugLogger {
+export type DebugLogger = {
     /**
      * Log a debug message (only when debug mode is enabled)
      */
@@ -38,7 +38,7 @@ export interface DebugLogger {
      * Log an error message (always logs, regardless of debug mode)
      */
     error: (message: unknown, options?: LogOptions) => void;
-}
+};
 /**
  * Creates a debug logger instance
  *
