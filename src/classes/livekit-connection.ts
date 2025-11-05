@@ -168,6 +168,7 @@ import {
   RoomEvent,
   VideoPresets,
 } from 'livekit-client';
+import { createDebugLogger, type DebugLogger } from '../utils';
 import type { ParticipantData } from './types';
 
 /**
@@ -208,8 +209,8 @@ export class LiveKitConnection extends EventEmitter {
   /** Whether we've already emitted a 'connected' event for the current session */
   private hasEmittedConnected = false;
 
-  /** Enable debug logging for troubleshooting */
-  private readonly debug: boolean;
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
 
   /**
    * Creates a new LiveKitConnection instance
@@ -238,7 +239,7 @@ export class LiveKitConnection extends EventEmitter {
     super();
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
-    this.debug = debug;
+    this.logger = createDebugLogger(debug);
 
     // Initialize LiveKit Room with optimal configuration for voice agents
     this.room = new Room({
@@ -380,14 +381,14 @@ export class LiveKitConnection extends EventEmitter {
    */
   async connect(): Promise<void> {
     try {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Critical debugging for connection start
-        console.log('[LIVEKIT DEBUG] connect() called', {
+      this.logger.log('connect() called', {
+        source: 'LiveKitConnection',
+        error: {
           lkUrl: this.lkUrl,
           attempt: this.connectionAttempts + 1,
           stack: new Error('Connection call stack').stack,
-        });
-      }
+        },
+      });
 
       // Record call initiation time for performance metrics
       this.callStartTime = Date.now();
@@ -402,14 +403,14 @@ export class LiveKitConnection extends EventEmitter {
       // Establish secure WebRTC connection to LiveKit room
       await this.room?.connect(this.lkUrl, this.accessToken);
 
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Connection success logging
-        console.log('[LIVEKIT DEBUG] room.connect() completed successfully', {
+      this.logger.log('room.connect() completed successfully', {
+        source: 'LiveKitConnection',
+        error: {
           connectionTimeMs: Date.now() - connectionStart,
           roomName: this.room?.name,
           state: this.room?.state,
-        });
-      }
+        },
+      });
 
       // Emit connection timing metrics for performance monitoring
       const connectionTime = Date.now() - connectionStart;
@@ -423,13 +424,13 @@ export class LiveKitConnection extends EventEmitter {
         this.hasEmittedConnected = true;
       }
     } catch (error) {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Critical error logging
-        console.error('[LIVEKIT DEBUG] connect() failed', {
+      this.logger.error('connect() failed', {
+        source: 'LiveKitConnection',
+        error: {
           error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
-        });
-      }
+        },
+      });
 
       this.emit(
         'connectionError',
@@ -454,37 +455,37 @@ export class LiveKitConnection extends EventEmitter {
    */
   async disconnect(): Promise<void> {
     try {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Critical debugging for disconnect calls
-        console.log('[LIVEKIT DEBUG] disconnect() called', {
+      this.logger.log('disconnect() called', {
+        source: 'LiveKitConnection',
+        error: {
           isConnected: this.isConnected,
           roomName: this.room?.name,
           state: this.room?.state,
           participantCount: this.participants.size,
           stack: new Error('Disconnect call stack').stack,
-        });
-      }
+        },
+      });
 
       if (this.room) {
         await this.room.disconnect();
 
-        if (this.debug) {
-          // biome-ignore lint/suspicious/noConsole: Disconnect completion logging
-          console.log('[LIVEKIT DEBUG] room.disconnect() completed', {
+        this.logger.log('room.disconnect() completed', {
+          source: 'LiveKitConnection',
+          error: {
             roomName: this.room?.name,
             state: this.room?.state,
-          });
-        }
+          },
+        });
       }
       this.#cleanup();
     } catch (error) {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Critical error logging
-        console.error('[LIVEKIT DEBUG] disconnect() failed', {
+      this.logger.error('disconnect() failed', {
+        source: 'LiveKitConnection',
+        error: {
           error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
-        });
-      }
+        },
+      });
 
       this.emit(
         'connectionError',
@@ -586,14 +587,14 @@ export class LiveKitConnection extends EventEmitter {
     try {
       this.isConnected = true;
 
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Critical debugging for connection lifecycle
-        console.log('[LIVEKIT DEBUG] Room Connected event fired', {
+      this.logger.log('Room Connected event fired', {
+        source: 'LiveKitConnection',
+        error: {
           roomName: this.room?.name,
           localParticipant: this.room?.localParticipant?.identity,
           state: this.room?.state,
-        });
-      }
+        },
+      });
 
       // Enable microphone after connection
       await this.room?.localParticipant?.setMicrophoneEnabled(true);
@@ -604,10 +605,10 @@ export class LiveKitConnection extends EventEmitter {
         this.hasEmittedConnected = true;
       }
     } catch (error) {
-      if (this.debug) {
-        // biome-ignore lint/suspicious/noConsole: Critical error logging
-        console.error('[LIVEKIT DEBUG] Error in handleConnected:', error);
-      }
+      this.logger.error('Error in handleConnected', {
+        source: 'LiveKitConnection',
+        error,
+      });
       this.emit(
         'connectionError',
         new Error(
@@ -621,14 +622,14 @@ export class LiveKitConnection extends EventEmitter {
    * Handles room disconnection
    */
   #handleDisconnected(): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Critical debugging for disconnection events
-      console.log('[LIVEKIT DEBUG] Room Disconnected event fired', {
+    this.logger.log('Room Disconnected event fired', {
+      source: 'LiveKitConnection',
+      error: {
         roomName: this.room?.name,
         state: this.room?.state,
         participantCount: this.participants.size,
-      });
-    }
+      },
+    });
 
     this.isConnected = false;
     this.emit('disconnected');
@@ -641,14 +642,14 @@ export class LiveKitConnection extends EventEmitter {
   #handleReconnecting(): void {
     this.reconnectionAttempts++;
 
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Critical debugging for reconnection
-      console.log('[LIVEKIT DEBUG] Room Reconnecting', {
+    this.logger.log('Room Reconnecting', {
+      source: 'LiveKitConnection',
+      error: {
         attempt: this.reconnectionAttempts,
         roomName: this.room?.name,
         state: this.room?.state,
-      });
-    }
+      },
+    });
 
     this.emit('reconnecting');
   }
@@ -659,14 +660,14 @@ export class LiveKitConnection extends EventEmitter {
   #handleReconnected(): void {
     this.isConnected = true;
 
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Debugging successful reconnection
-      console.log('[LIVEKIT DEBUG] Room Reconnected successfully', {
+    this.logger.log('Room Reconnected successfully', {
+      source: 'LiveKitConnection',
+      error: {
         roomName: this.room?.name,
         state: this.room?.state,
         participantCount: this.participants.size,
-      });
-    }
+      },
+    });
 
     this.emit('reconnected');
   }
@@ -675,15 +676,15 @@ export class LiveKitConnection extends EventEmitter {
    * Handles participant connection
    */
   #handleParticipantConnected(participant: RemoteParticipant): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Debugging participant connections
-      console.log('[LIVEKIT DEBUG] Participant connected in LiveKit layer', {
+    this.logger.log('Participant connected in LiveKit layer', {
+      source: 'LiveKitConnection',
+      error: {
         identity: participant.identity,
         sid: participant.sid,
         metadata: participant.metadata,
         totalParticipants: this.participants.size + 1,
-      });
-    }
+      },
+    });
 
     this.participants.set(participant.sid || 'unknown', {
       identity: participant.identity || 'unknown',
@@ -698,14 +699,14 @@ export class LiveKitConnection extends EventEmitter {
    * Handles participant disconnection
    */
   #handleParticipantDisconnected(participant: RemoteParticipant): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Debugging participant disconnections
-      console.log('[LIVEKIT DEBUG] Participant disconnected in LiveKit layer', {
+    this.logger.log('Participant disconnected in LiveKit layer', {
+      source: 'LiveKitConnection',
+      error: {
         identity: participant.identity,
         sid: participant.sid,
         totalParticipantsBeforeRemoval: this.participants.size,
-      });
-    }
+      },
+    });
 
     this.participants.delete(participant.sid || 'unknown');
     this.emit('participantDisconnected', participant);
@@ -732,14 +733,14 @@ export class LiveKitConnection extends EventEmitter {
    * Handles connection state changes
    */
   #handleConnectionStateChanged(state: ConnectionState): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Critical debugging for connection state
-      console.log('[LIVEKIT DEBUG] Connection state changed', {
+    this.logger.log('Connection state changed', {
+      source: 'LiveKitConnection',
+      error: {
         newState: state,
         roomName: this.room?.name,
         participantCount: this.participants.size,
-      });
-    }
+      },
+    });
 
     this.emit('connectionStateChanged', state);
   }
@@ -748,44 +749,41 @@ export class LiveKitConnection extends EventEmitter {
    * Handles signal connection established
    */
   #handleSignalConnected(): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Debugging signal connection
-      console.log('[LIVEKIT DEBUG] Signal connection established', {
+    this.logger.log('Signal connection established', {
+      source: 'LiveKitConnection',
+      error: {
         roomName: this.room?.name,
         state: this.room?.state,
-      });
-    }
+      },
+    });
   }
 
   /**
    * Handles signal reconnection attempts
    */
   #handleSignalReconnecting(): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Critical debugging for signal reconnection
-      console.log(
-        '[LIVEKIT DEBUG] Signal reconnecting (signaling server connection lost)',
-        {
-          roomName: this.room?.name,
-          state: this.room?.state,
-          participantCount: this.participants.size,
-        }
-      );
-    }
+    this.logger.log('Signal reconnecting (signaling server connection lost)', {
+      source: 'LiveKitConnection',
+      error: {
+        roomName: this.room?.name,
+        state: this.room?.state,
+        participantCount: this.participants.size,
+      },
+    });
   }
 
   /**
    * Handles media devices errors
    */
   #handleMediaDevicesError(error: Error): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Critical debugging for media errors
-      console.error('[LIVEKIT DEBUG] Media devices error', {
+    this.logger.error('Media devices error', {
+      source: 'LiveKitConnection',
+      error: {
         error: error.message,
         stack: error.stack,
         roomName: this.room?.name,
-      });
-    }
+      },
+    });
   }
 
   /**
@@ -795,14 +793,14 @@ export class LiveKitConnection extends EventEmitter {
     quality: string,
     participant: Participant
   ): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Debugging connection quality
-      console.log('[LIVEKIT DEBUG] Connection quality changed', {
+    this.logger.log('Connection quality changed', {
+      source: 'LiveKitConnection',
+      error: {
         participant: participant.identity,
         quality,
         roomName: this.room?.name,
-      });
-    }
+      },
+    });
   }
 
   /**
@@ -810,15 +808,15 @@ export class LiveKitConnection extends EventEmitter {
    * This is critical for debugging DataChannel errors
    */
   #handleDCBufferStatusChanged(isLow: boolean, kind: DataPacket_Kind): void {
-    if (this.debug) {
-      // biome-ignore lint/suspicious/noConsole: Critical debugging for DataChannel issues
-      console.log('[LIVEKIT DEBUG] DataChannel buffer status changed', {
+    this.logger.log('DataChannel buffer status changed', {
+      source: 'LiveKitConnection',
+      error: {
         isLow,
         kind,
         roomName: this.room?.name,
         participantCount: this.participants.size,
-      });
-    }
+      },
+    });
   }
 
   /**
