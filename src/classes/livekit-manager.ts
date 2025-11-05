@@ -43,7 +43,7 @@ import type {
   Room,
 } from 'livekit-client';
 import { RoomEvent } from 'livekit-client';
-
+import { createDebugLogger, type DebugLogger } from '../utils';
 import { LiveKitAnalytics } from './livekit-analytics';
 import { LiveKitAudioManager } from './livekit-audio-manager';
 import { LiveKitConnection } from './livekit-connection';
@@ -97,6 +97,9 @@ export default class LiveKitManager extends EventEmitter {
   /** JWT access token for authentication */
   accessToken: string;
 
+  /** Debug logger instance for conditional logging */
+  logger: DebugLogger;
+
   /**
    * Creates a new LiveKitManager instance
    *
@@ -131,21 +134,70 @@ export default class LiveKitManager extends EventEmitter {
 
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
+    this.logger = createDebugLogger(debug);
+
+    this.logger.log('Initializing LiveKitManager', {
+      source: 'LiveKitManager',
+      error: {
+        lkUrl,
+        toolsCount: tools.length,
+        debug,
+      },
+    });
 
     // Initialize specialized modules with their specific responsibilities
+    this.logger.log('Creating LiveKitConnection module', {
+      source: 'LiveKitManager',
+    });
     this.connection = new LiveKitConnection(lkUrl, accessToken, debug);
+
+    this.logger.log('Creating LiveKitAnalytics module', {
+      source: 'LiveKitManager',
+    });
     this.analytics = new LiveKitAnalytics();
+
+    this.logger.log('Creating LiveKitAudioManager module', {
+      source: 'LiveKitManager',
+    });
     this.audioManager = new LiveKitAudioManager();
+
+    this.logger.log('Creating LiveKitToolRegistry module', {
+      source: 'LiveKitManager',
+      error: { toolsCount: tools.length },
+    });
     this.toolRegistry = new LiveKitToolRegistry(tools);
 
+    if (tools.length > 0) {
+      this.logger.log('Registered client-side tools', {
+        source: 'LiveKitManager',
+        error: {
+          toolNames: tools.map((t) => t.function_name),
+          totalTools: tools.length,
+        },
+      });
+    }
+
     // Establish communication channels between modules
+    this.logger.log('Setting up module communication', {
+      source: 'LiveKitManager',
+    });
     this.#setupModuleCommunication();
 
     // Configure event forwarding from modules to external consumers
+    this.logger.log('Setting up event forwarding', {
+      source: 'LiveKitManager',
+    });
     this.#setupEventForwarding();
 
     // Configure LiveKit room event handlers for WebRTC events
+    this.logger.log('Setting up room event handlers', {
+      source: 'LiveKitManager',
+    });
     this.#setupRoomEventHandlers();
+
+    this.logger.log('LiveKitManager initialization complete', {
+      source: 'LiveKitManager',
+    });
   }
 
   /**
@@ -171,18 +223,40 @@ export default class LiveKitManager extends EventEmitter {
    */
   async connect(): Promise<void> {
     if (this.connection.isConnected) {
+      this.logger.log('Already connected, skipping duplicate connection', {
+        source: 'LiveKitManager',
+      });
       // Already connected - silently return to avoid duplicate connections
       return;
     }
 
+    this.logger.log('Starting LiveKit room connection', {
+      source: 'LiveKitManager',
+    });
+
     // Track connection attempt in analytics before establishing connection
     const currentStats = this.connection.getConnectionStats();
+    this.logger.log('Updating connection analytics', {
+      source: 'LiveKitManager',
+      error: {
+        currentAttempts: currentStats.connectionAttempts,
+        reconnectionAttempts: currentStats.reconnectionAttempts,
+      },
+    });
     this.analytics.updateConnectionStats(
       currentStats.connectionAttempts + 1,
       currentStats.reconnectionAttempts
     );
 
+    const connectStart = Date.now();
     await this.connection.connect();
+    const connectDuration = Date.now() - connectStart;
+    this.logger.log('LiveKit room connection established', {
+      source: 'LiveKitManager',
+      error: {
+        duration: `${connectDuration}ms`,
+      },
+    });
   }
 
   /**
@@ -198,9 +272,26 @@ export default class LiveKitManager extends EventEmitter {
    * ```
    */
   async disconnect(): Promise<void> {
+    this.logger.log('Disconnecting from LiveKit room', {
+      source: 'LiveKitManager',
+      error: {
+        isConnected: this.connection.isConnected,
+      },
+    });
+
     await this.connection.disconnect();
+    this.logger.log('Disconnected from LiveKit room', {
+      source: 'LiveKitManager',
+    });
+
     // Perform comprehensive cleanup of all modules
+    this.logger.log('Performing cleanup of all modules', {
+      source: 'LiveKitManager',
+    });
     this.cleanup();
+    this.logger.log('Cleanup complete', {
+      source: 'LiveKitManager',
+    });
   }
 
   /**
@@ -220,8 +311,18 @@ export default class LiveKitManager extends EventEmitter {
    * ```
    */
   pause(): void {
+    this.logger.log('Pausing voice conversation', {
+      source: 'LiveKitManager',
+      error: {
+        isConnected: this.connection.isConnected,
+        wasPaused: this.connection.isPaused,
+      },
+    });
     this.connection.pause();
     this.audioManager.pauseAllAudio();
+    this.logger.log('Voice conversation paused', {
+      source: 'LiveKitManager',
+    });
   }
 
   /**
@@ -237,8 +338,18 @@ export default class LiveKitManager extends EventEmitter {
    * ```
    */
   resume(): void {
+    this.logger.log('Resuming voice conversation', {
+      source: 'LiveKitManager',
+      error: {
+        isConnected: this.connection.isConnected,
+        wasPaused: this.connection.isPaused,
+      },
+    });
     this.connection.resume();
     this.audioManager.resumeAllAudio();
+    this.logger.log('Voice conversation resumed', {
+      source: 'LiveKitManager',
+    });
   }
 
   /**
@@ -259,6 +370,14 @@ export default class LiveKitManager extends EventEmitter {
    * ```
    */
   setVolume(volume: number): void {
+    const PERCENTAGE_MULTIPLIER = 100;
+    this.logger.log('Setting audio volume', {
+      source: 'LiveKitManager',
+      error: {
+        volume,
+        percentage: `${Math.round(volume * PERCENTAGE_MULTIPLIER)}%`,
+      },
+    });
     this.audioManager.setVolume(volume);
   }
 
@@ -659,7 +778,23 @@ export default class LiveKitManager extends EventEmitter {
    * ```
    */
   registerTools(tools?: Tool[]): void {
-    if (tools?.length) {
+    this.logger.log('Registering client-side tools', {
+      source: 'LiveKitManager',
+      error: {
+        newToolsCount: Array.isArray(tools) ? tools.length : 0,
+        hasRoom: !!this.room,
+        isConnected: this.connection.isConnected,
+      },
+    });
+
+    if (Array.isArray(tools) && tools.length > 0) {
+      this.logger.log('Setting new tools in registry', {
+        source: 'LiveKitManager',
+        error: {
+          toolNames: tools.map((t) => t.function_name),
+          totalTools: tools.length,
+        },
+      });
       this.toolRegistry.setTools(tools);
     }
 
@@ -669,6 +804,12 @@ export default class LiveKitManager extends EventEmitter {
     }
 
     this.toolRegistry.registerTools();
+    this.logger.log('Tools registration complete', {
+      source: 'LiveKitManager',
+      error: {
+        registeredTools: this.toolRegistry.getTools().length,
+      },
+    });
   }
 
   /**
@@ -905,6 +1046,16 @@ export default class LiveKitManager extends EventEmitter {
           publication: RemoteTrackPublication,
           participant: RemoteParticipant
         ) => {
+          this.logger.log('Track subscribed', {
+            source: 'LiveKitManager',
+            error: {
+              trackSid: track.sid,
+              trackKind: track.kind,
+              participantIdentity: participant.identity,
+              isMuted: publication.isMuted,
+            },
+          });
+
           // Delegate audio track processing to audio manager
           this.audioManager.handleTrackSubscribed(
             track,
@@ -927,6 +1078,15 @@ export default class LiveKitManager extends EventEmitter {
           publication: RemoteTrackPublication,
           participant: RemoteParticipant
         ) => {
+          this.logger.log('Track unsubscribed', {
+            source: 'LiveKitManager',
+            error: {
+              trackSid: track.sid,
+              trackKind: track.kind,
+              participantIdentity: participant.identity,
+            },
+          });
+
           // Delegate audio track cleanup to audio manager
           this.audioManager.handleTrackUnsubscribed(
             track,
@@ -945,6 +1105,14 @@ export default class LiveKitManager extends EventEmitter {
       [
         RoomEvent.DataReceived,
         (payload: Uint8Array, participant?: RemoteParticipant) => {
+          this.logger.log('Data received from participant', {
+            source: 'LiveKitManager',
+            error: {
+              payloadSize: payload.length,
+              participantIdentity: participant?.identity || 'unknown',
+            },
+          });
+
           // Delegate data processing to tool registry for RPC handling
           this.toolRegistry.handleDataReceived(payload, participant?.identity);
         },
@@ -959,6 +1127,15 @@ export default class LiveKitManager extends EventEmitter {
       [
         RoomEvent.ConnectionQualityChanged,
         (quality: ConnectionQuality, participant: Participant) => {
+          this.logger.log('Connection quality changed', {
+            source: 'LiveKitManager',
+            error: {
+              quality,
+              participantIdentity: participant.identity,
+              isLocal: participant.isLocal,
+            },
+          });
+
           // Delegate quality monitoring to analytics module
           this.analytics.handleConnectionQualityChanged(quality, participant);
         },
@@ -966,6 +1143,14 @@ export default class LiveKitManager extends EventEmitter {
       [
         RoomEvent.AudioPlaybackStatusChanged,
         (playing: boolean) => {
+          this.logger.log('Audio playback status changed', {
+            source: 'LiveKitManager',
+            error: {
+              playing,
+              state: playing ? 'started' : 'stopped',
+            },
+          });
+
           // Delegate playback state tracking to analytics module
           this.analytics.handleAudioPlaybackChanged(playing);
         },
@@ -973,6 +1158,14 @@ export default class LiveKitManager extends EventEmitter {
       [
         RoomEvent.MediaDevicesError,
         (error: Error) => {
+          this.logger.error('Media devices error', {
+            source: 'LiveKitManager',
+            error: {
+              message: error.message,
+              name: error.name,
+            },
+          });
+
           // Forward media device errors for external error handling
           this.emit('mediaDevicesError', error);
         },
@@ -980,6 +1173,15 @@ export default class LiveKitManager extends EventEmitter {
       [
         RoomEvent.LocalTrackPublished,
         (publication: LocalTrackPublication) => {
+          this.logger.log('Local track published', {
+            source: 'LiveKitManager',
+            error: {
+              trackSid: publication.trackSid,
+              trackKind: publication.kind,
+              isMuted: publication.isMuted,
+            },
+          });
+
           // Forward local track publication event with track data
           this.emit('localTrackPublished', {
             publication,
@@ -1008,6 +1210,13 @@ export default class LiveKitManager extends EventEmitter {
   #updateAnalyticsCounts(): void {
     const participantCount = this.connection.participants.size;
     const trackCount = this.audioManager.trackStats.size;
+    this.logger.log('Updating analytics counts', {
+      source: 'LiveKitManager',
+      error: {
+        participants: participantCount,
+        tracks: trackCount,
+      },
+    });
     this.analytics.updateCounts(participantCount, trackCount);
   }
 
