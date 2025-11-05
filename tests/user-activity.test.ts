@@ -13,13 +13,32 @@ const NON_STRING_NUMBER = 123;
 // Mock console.log to test log outputs
 const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
+// Helper to check if console.log was called with a message from the debug logger
+const expectLoggerCalledWith = (message: string, context?: any) => {
+  // The logger calls console.log(formattedMessage, message, errorObject)
+  // We check if any call matches our expected message
+  const calls = consoleSpy.mock.calls;
+  const matchingCall = calls.find(
+    (call) => call[1] === message && (!context || call[2]?.context === context)
+  );
+  // biome-ignore lint/suspicious/noMisplacedAssertion: This is a test helper function
+  expect(matchingCall).toBeDefined();
+};
+
+// Helper to count specific log messages
+const countLoggerCalls = (message: string): number => {
+  const calls = consoleSpy.mock.calls;
+  return calls.filter((call) => call[1] === message).length;
+};
+
 describe('User Activity and Contextual Updates', () => {
   let voiceAgent: HamsaVoiceAgent;
 
   beforeEach(() => {
     jest.clearAllMocks();
     consoleSpy.mockClear();
-    voiceAgent = new HamsaVoiceAgent('test-api-key');
+    // Enable debug mode so the logger outputs to console
+    voiceAgent = new HamsaVoiceAgent('test-api-key', { debug: true });
 
     // Mock successful API response
     (global.fetch as any).mockResolvedValue({
@@ -49,7 +68,7 @@ describe('User Activity and Contextual Updates', () => {
 
       voiceAgent.sendUserActivity();
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expectLoggerCalledWith(
         'User activity detected - preventing agent interruption'
       );
     });
@@ -57,9 +76,8 @@ describe('User Activity and Contextual Updates', () => {
     test('should not log when not connected', () => {
       voiceAgent.sendUserActivity();
 
-      expect(consoleSpy).not.toHaveBeenCalledWith(
-        'User activity detected - preventing agent interruption'
-      );
+      // Logger won't be called if not connected
+      expect(consoleSpy).not.toHaveBeenCalled();
     });
 
     test('should handle multiple rapid calls', async () => {
@@ -70,8 +88,11 @@ describe('User Activity and Contextual Updates', () => {
         voiceAgent.sendUserActivity();
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_CALLS_COUNT);
-      expect(consoleSpy).toHaveBeenCalledWith(
+      const callCount = countLoggerCalls(
+        'User activity detected - preventing agent interruption'
+      );
+      expect(callCount).toBe(RAPID_CALLS_COUNT);
+      expectLoggerCalledWith(
         'User activity detected - preventing agent interruption'
       );
     });
@@ -80,7 +101,10 @@ describe('User Activity and Contextual Updates', () => {
       // Initial connection
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      const initialCount = countLoggerCalls(
+        'User activity detected - preventing agent interruption'
+      );
+      expect(initialCount).toBe(1);
 
       // End and restart
       await voiceAgent.end();
@@ -92,7 +116,7 @@ describe('User Activity and Contextual Updates', () => {
       // Reconnect
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expectLoggerCalledWith(
         'User activity detected - preventing agent interruption'
       );
     });
@@ -111,20 +135,14 @@ describe('User Activity and Contextual Updates', () => {
       const contextMessage = 'User navigated to checkout page';
       voiceAgent.sendContextualUpdate(contextMessage);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Sending contextual update:',
-        contextMessage
-      );
+      expectLoggerCalledWith('Sending contextual update', contextMessage);
     });
 
     test('should not log when not connected', () => {
       const contextMessage = 'User navigated to checkout page';
       voiceAgent.sendContextualUpdate(contextMessage);
 
-      expect(consoleSpy).not.toHaveBeenCalledWith(
-        'Sending contextual update:',
-        contextMessage
-      );
+      expect(consoleSpy).not.toHaveBeenCalled();
     });
 
     test('should handle different types of contextual messages', async () => {
@@ -142,12 +160,10 @@ describe('User Activity and Contextual Updates', () => {
         voiceAgent.sendContextualUpdate(context);
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(contexts.length);
+      const callCount = countLoggerCalls('Sending contextual update');
+      expect(callCount).toBe(contexts.length);
       for (const context of contexts) {
-        expect(consoleSpy).toHaveBeenCalledWith(
-          'Sending contextual update:',
-          context
-        );
+        expectLoggerCalledWith('Sending contextual update', context);
       }
     });
 
@@ -166,14 +182,16 @@ describe('User Activity and Contextual Updates', () => {
         expect(() => voiceAgent.sendContextualUpdate(context)).not.toThrow();
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(specialContexts.length);
+      const callCount = countLoggerCalls('Sending contextual update');
+      expect(callCount).toBe(specialContexts.length);
     });
 
     test('should work correctly after disconnection and reconnection', async () => {
       // Initial connection
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendContextualUpdate('Initial context');
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      const initialCount = countLoggerCalls('Sending contextual update');
+      expect(initialCount).toBe(1);
 
       // End and restart
       await voiceAgent.end();
@@ -185,8 +203,8 @@ describe('User Activity and Contextual Updates', () => {
       // Reconnect
       await voiceAgent.start({ agentId: 'test-agent' });
       voiceAgent.sendContextualUpdate('Context after reconnection');
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Sending contextual update:',
+      expectLoggerCalledWith(
+        'Sending contextual update',
         'Context after reconnection'
       );
     });
@@ -203,16 +221,21 @@ describe('User Activity and Contextual Updates', () => {
       voiceAgent.sendContextualUpdate('User scrolled to bottom');
       voiceAgent.sendUserActivity();
 
-      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_INTEGRATION_CALLS);
-      expect(consoleSpy).toHaveBeenCalledWith(
+      const activityCount = countLoggerCalls(
         'User activity detected - preventing agent interruption'
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Sending contextual update:',
+      const contextCount = countLoggerCalls('Sending contextual update');
+      expect(activityCount + contextCount).toBe(EXPECTED_INTEGRATION_CALLS);
+
+      expectLoggerCalledWith(
+        'User activity detected - preventing agent interruption'
+      );
+      expectLoggerCalledWith(
+        'Sending contextual update',
         'User clicked button'
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Sending contextual update:',
+      expectLoggerCalledWith(
+        'Sending contextual update',
         'User scrolled to bottom'
       );
     });
@@ -232,7 +255,11 @@ describe('User Activity and Contextual Updates', () => {
       voiceAgent.sendUserActivity(); // User selects suggestion
       voiceAgent.sendContextualUpdate('User selected "premium plan"');
 
-      expect(consoleSpy).toHaveBeenCalledTimes(EXPECTED_MAINTAIN_STATE_CALLS);
+      const activityCount = countLoggerCalls(
+        'User activity detected - preventing agent interruption'
+      );
+      const contextCount = countLoggerCalls('Sending contextual update');
+      expect(activityCount + contextCount).toBe(EXPECTED_MAINTAIN_STATE_CALLS);
 
       // Verify the methods don't interfere with each other
       expect(() => {
@@ -253,16 +280,17 @@ describe('User Activity and Contextual Updates', () => {
         }
       }
 
-      expect(consoleSpy).toHaveBeenCalledTimes(RAPID_MIXED_CALLS);
-
-      // Verify no errors occurred
-      expect(consoleSpy).toHaveBeenCalledWith(
+      const activityCount = countLoggerCalls(
         'User activity detected - preventing agent interruption'
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Sending contextual update:',
-        'Context update 19'
+      const contextCount = countLoggerCalls('Sending contextual update');
+      expect(activityCount + contextCount).toBe(RAPID_MIXED_CALLS);
+
+      // Verify no errors occurred
+      expectLoggerCalledWith(
+        'User activity detected - preventing agent interruption'
       );
+      expectLoggerCalledWith('Sending contextual update', 'Context update 19');
     });
   });
 
@@ -292,12 +320,12 @@ describe('User Activity and Contextual Updates', () => {
 
     test('should handle methods when liveKitManager is null', () => {
       // Test before any connection is established
-      const newAgent = new HamsaVoiceAgent('test-key');
+      const newAgent = new HamsaVoiceAgent('test-key', { debug: true });
 
       expect(() => newAgent.sendUserActivity()).not.toThrow();
       expect(() => newAgent.sendContextualUpdate('test')).not.toThrow();
 
-      // Should not log anything
+      // Should not log anything (because not connected, not because debug is off)
       expect(consoleSpy).not.toHaveBeenCalled();
     });
 
@@ -306,7 +334,10 @@ describe('User Activity and Contextual Updates', () => {
 
       // Should work when connected
       voiceAgent.sendUserActivity();
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      const activityCount = countLoggerCalls(
+        'User activity detected - preventing agent interruption'
+      );
+      expect(activityCount).toBe(1);
 
       // Simulate connection loss
       if (voiceAgent.liveKitManager) {

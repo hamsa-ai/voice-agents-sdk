@@ -593,8 +593,12 @@ class HamsaVoiceAgent extends EventEmitter {
     if (this.liveKitManager?.isConnected) {
       // Send user activity signal to prevent agent interruption
       // This could be implemented as a special data message to the agent
-      // biome-ignore lint/suspicious/noConsole: Tests assert on this log output
-      console.log('User activity detected - preventing agent interruption');
+      this.logger.log(
+        'User activity detected - preventing agent interruption',
+        {
+          source: 'HamsaVoiceAgent',
+        }
+      );
     }
   }
 
@@ -624,8 +628,10 @@ class HamsaVoiceAgent extends EventEmitter {
   sendContextualUpdate(context: string): void {
     if (this.liveKitManager?.isConnected) {
       // Send contextual update without triggering agent response
-      // biome-ignore lint/suspicious/noConsole: Tests assert on this log output
-      console.log('Sending contextual update:', context);
+      this.logger.log('Sending contextual update', {
+        source: 'HamsaVoiceAgent',
+        error: { context },
+      });
       // This could be implemented as a special non-conversational message
     }
   }
