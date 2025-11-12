@@ -454,34 +454,72 @@ export class LiveKitConnection extends EventEmitter {
    * Disconnects from the LiveKit room
    */
   async disconnect(): Promise<void> {
+    const disconnectStartTime = Date.now();
     try {
-      this.logger.log('disconnect() called', {
+      this.logger.log('LiveKitConnection.disconnect() - START', {
         source: 'LiveKitConnection',
         error: {
+          timestamp: disconnectStartTime,
           isConnected: this.isConnected,
           roomName: this.room?.name,
           state: this.room?.state,
           participantCount: this.participants.size,
+          hasRoom: !!this.room,
           stack: new Error('Disconnect call stack').stack,
         },
       });
 
       if (this.room) {
-        await this.room.disconnect();
-
-        this.logger.log('room.disconnect() completed', {
+        const roomDisconnectStart = Date.now();
+        this.logger.log('Calling room.disconnect() (LiveKit SDK)', {
           source: 'LiveKitConnection',
           error: {
+            timestamp: roomDisconnectStart,
             roomName: this.room?.name,
             state: this.room?.state,
           },
         });
+
+        await this.room.disconnect();
+
+        const roomDisconnectEnd = Date.now();
+        this.logger.log('room.disconnect() completed (LiveKit SDK)', {
+          source: 'LiveKitConnection',
+          error: {
+            timestamp: roomDisconnectEnd,
+            roomDisconnectDuration: roomDisconnectEnd - roomDisconnectStart,
+            roomName: this.room?.name,
+            state: this.room?.state,
+          },
+        });
+      } else {
+        this.logger.log('No room to disconnect (room is null)', {
+          source: 'LiveKitConnection',
+          error: {
+            timestamp: Date.now(),
+          },
+        });
       }
+
+      const cleanupStart = Date.now();
       this.#cleanup();
-    } catch (error) {
-      this.logger.error('disconnect() failed', {
+      const cleanupEnd = Date.now();
+
+      this.logger.log('LiveKitConnection.disconnect() - COMPLETE', {
         source: 'LiveKitConnection',
         error: {
+          timestamp: cleanupEnd,
+          cleanupDuration: cleanupEnd - cleanupStart,
+          totalDisconnectDuration: cleanupEnd - disconnectStartTime,
+        },
+      });
+    } catch (error) {
+      const errorTime = Date.now();
+      this.logger.error('LiveKitConnection.disconnect() - FAILED', {
+        source: 'LiveKitConnection',
+        error: {
+          timestamp: errorTime,
+          timeSinceStart: errorTime - disconnectStartTime,
           error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
         },
@@ -622,18 +660,46 @@ export class LiveKitConnection extends EventEmitter {
    * Handles room disconnection
    */
   #handleDisconnected(): void {
-    this.logger.log('Room Disconnected event fired', {
+    const disconnectEventTime = Date.now();
+    this.logger.log(
+      'Room Disconnected event fired (from LiveKit SDK) - TIMING',
+      {
+        source: 'LiveKitConnection',
+        error: {
+          timestamp: disconnectEventTime,
+          roomName: this.room?.name,
+          state: this.room?.state,
+          participantCount: this.participants.size,
+        },
+      }
+    );
+
+    this.isConnected = false;
+
+    const emitStart = Date.now();
+    this.emit('disconnected');
+    const emitEnd = Date.now();
+
+    this.logger.log('disconnected event emitted to parent - TIMING', {
       source: 'LiveKitConnection',
       error: {
-        roomName: this.room?.name,
-        state: this.room?.state,
-        participantCount: this.participants.size,
+        timestamp: emitEnd,
+        emitDuration: emitEnd - emitStart,
       },
     });
 
-    this.isConnected = false;
-    this.emit('disconnected');
+    const cleanupStart = Date.now();
     this.#cleanup();
+    const cleanupEnd = Date.now();
+
+    this.logger.log('Room Disconnected handler complete - TIMING', {
+      source: 'LiveKitConnection',
+      error: {
+        timestamp: cleanupEnd,
+        cleanupDuration: cleanupEnd - cleanupStart,
+        totalHandlerDuration: cleanupEnd - disconnectEventTime,
+      },
+    });
   }
 
   /**

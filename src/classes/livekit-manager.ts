@@ -272,25 +272,51 @@ export default class LiveKitManager extends EventEmitter {
    * ```
    */
   async disconnect(): Promise<void> {
-    this.logger.log('Disconnecting from LiveKit room', {
+    const disconnectStartTime = Date.now();
+    this.logger.log('LiveKitManager.disconnect() - START', {
       source: 'LiveKitManager',
       error: {
+        timestamp: disconnectStartTime,
         isConnected: this.connection.isConnected,
+        participantCount: this.connection.participants.size,
+        hasRoom: !!this.connection.room,
       },
     });
 
+    const connectionDisconnectStart = Date.now();
     await this.connection.disconnect();
-    this.logger.log('Disconnected from LiveKit room', {
-      source: 'LiveKitManager',
-    });
+    const connectionDisconnectEnd = Date.now();
+
+    this.logger.log(
+      'LiveKitManager.disconnect() - connection.disconnect() completed',
+      {
+        source: 'LiveKitManager',
+        error: {
+          timestamp: connectionDisconnectEnd,
+          connectionDisconnectDuration:
+            connectionDisconnectEnd - connectionDisconnectStart,
+        },
+      }
+    );
 
     // Perform comprehensive cleanup of all modules
+    const cleanupStart = Date.now();
     this.logger.log('Performing cleanup of all modules', {
       source: 'LiveKitManager',
+      error: {
+        timestamp: cleanupStart,
+      },
     });
     this.cleanup();
-    this.logger.log('Cleanup complete', {
+    const cleanupEnd = Date.now();
+
+    this.logger.log('LiveKitManager.disconnect() - COMPLETE', {
       source: 'LiveKitManager',
+      error: {
+        timestamp: cleanupEnd,
+        cleanupDuration: cleanupEnd - cleanupStart,
+        totalDisconnectDuration: cleanupEnd - disconnectStartTime,
+      },
     });
   }
 

@@ -874,12 +874,28 @@ class HamsaVoiceAgent extends EventEmitter {
           this.emit('listening');
         })
         .on('disconnected', () => {
-          this.logger.log('disconnected event fired - room connection closed', {
-            source: 'HamsaVoiceAgent',
-          });
+          const disconnectedEventTime = Date.now();
+          this.logger.log(
+            'disconnected event fired - room connection closed - TIMING',
+            {
+              source: 'HamsaVoiceAgent',
+              error: {
+                timestamp: disconnectedEventTime,
+                userInitiatedEnd: this.userInitiatedEnd,
+              },
+            }
+          );
           // Always emit callEnded when connection ends
           this.emit('callEnded');
+          const closedEventTime = Date.now();
           this.emit('closed');
+          this.logger.log('closed event emitted - TIMING', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              timestamp: closedEventTime,
+              timeSinceDisconnected: closedEventTime - disconnectedEventTime,
+            },
+          });
           // Reset the flag when fully disconnected
           this.userInitiatedEnd = false;
         })
@@ -1098,37 +1114,112 @@ class HamsaVoiceAgent extends EventEmitter {
    * ```
    */
   end(): void {
+    const endStartTime = Date.now();
     try {
-      this.logger.log('end() called', {
+      this.logger.log('end() called - START DISCONNECT TIMING', {
         source: 'HamsaVoiceAgent',
         error: {
-          stack: new Error('Stack trace').stack,
+          timestamp: endStartTime,
           userInitiatedEnd: this.userInitiatedEnd,
+          isConnected: this.liveKitManager?.isConnected ?? false,
+          stack: new Error('Stack trace').stack,
         },
       });
 
-      if (this.liveKitManager) {
-        this.userInitiatedEnd = true; // Mark as user-initiated to prevent recursive calls
-        this.liveKitManager.disconnect();
-        this.emit('callEnded');
-      }
-      // Release screen wake lock to allow device sleep
-      if (this.wakeLockManager?.isActive()) {
-        this.wakeLockManager.release().catch((_err) => {
-          // Intentionally ignore wake lock release errors
-        });
-      }
+      this.#performDisconnect(endStartTime);
+      this.#releaseWakeLock();
+
+      const endCompleteTime = Date.now();
+      this.logger.log('end() completed - END DISCONNECT TIMING', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          timestamp: endCompleteTime,
+          totalDuration: endCompleteTime - endStartTime,
+        },
+      });
     } catch (error) {
-      if (this.listenerCount('error') > 0) {
-        // Forward HamsaApiError instances directly to preserve messageKey
-        if (error instanceof HamsaApiError) {
-          this.emit('error', error);
-        } else {
-          // For other errors, wrap with context
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          this.emit('error', new Error(`Failed to end call: ${errorMessage}`));
-        }
+      this.#handleEndError(error, endStartTime);
+    }
+  }
+
+  /**
+   * Performs the disconnect operation with timing logs
+   * @private
+   */
+  #performDisconnect(endStartTime: number): void {
+    if (!this.liveKitManager) {
+      return;
+    }
+
+    this.userInitiatedEnd = true;
+
+    const disconnectCallTime = Date.now();
+    this.logger.log('Calling liveKitManager.disconnect()', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: disconnectCallTime,
+        timeSinceEndCalled: disconnectCallTime - endStartTime,
+      },
+    });
+
+    this.liveKitManager.disconnect();
+
+    const afterDisconnectCallTime = Date.now();
+    this.logger.log(
+      'liveKitManager.disconnect() call returned (async, not completed)',
+      {
+        source: 'HamsaVoiceAgent',
+        error: {
+          timestamp: afterDisconnectCallTime,
+          disconnectCallDuration: afterDisconnectCallTime - disconnectCallTime,
+        },
+      }
+    );
+
+    this.emit('callEnded');
+
+    const afterCallEndedTime = Date.now();
+    this.logger.log('callEnded event emitted', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: afterCallEndedTime,
+        totalTimeInEndMethod: afterCallEndedTime - endStartTime,
+      },
+    });
+  }
+
+  /**
+   * Releases the screen wake lock
+   * @private
+   */
+  #releaseWakeLock(): void {
+    if (this.wakeLockManager?.isActive()) {
+      this.wakeLockManager.release().catch((_err) => {
+        // Intentionally ignore wake lock release errors
+      });
+    }
+  }
+
+  /**
+   * Handles errors that occur during end()
+   * @private
+   */
+  #handleEndError(error: unknown, endStartTime: number): void {
+    this.logger.error('end() threw error', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        error: error instanceof Error ? error.message : String(error),
+        timeSinceStart: Date.now() - endStartTime,
+      },
+    });
+
+    if (this.listenerCount('error') > 0) {
+      if (error instanceof HamsaApiError) {
+        this.emit('error', error);
+      } else {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.emit('error', new Error(`Failed to end call: ${errorMessage}`));
       }
     }
   }
