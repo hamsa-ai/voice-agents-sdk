@@ -894,6 +894,9 @@ export class LiveKitConnection extends EventEmitter {
     this.isConnected = false;
     this.isPaused = false;
     this.hasEmittedConnected = false;
+
+    // Note: Event listeners on the room are automatically cleaned up
+    // when room.disconnect() is called by the LiveKit SDK
   }
 
   /**
