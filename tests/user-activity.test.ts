@@ -107,7 +107,12 @@ describe('User Activity and Contextual Updates', () => {
       expect(initialCount).toBe(1);
 
       // End and restart
-      await voiceAgent.end();
+      // Wait for async end to complete
+      const endPromise = new Promise<void>((resolve) => {
+        voiceAgent.once('callEnded', resolve);
+      });
+      voiceAgent.end();
+      await endPromise;
       consoleSpy.mockClear();
 
       voiceAgent.sendUserActivity();
@@ -193,8 +198,12 @@ describe('User Activity and Contextual Updates', () => {
       const initialCount = countLoggerCalls('Sending contextual update');
       expect(initialCount).toBe(1);
 
-      // End and restart
-      await voiceAgent.end();
+      // End and restart - wait for async end to complete
+      const endPromise = new Promise<void>((resolve) => {
+        voiceAgent.once('callEnded', resolve);
+      });
+      voiceAgent.end();
+      await endPromise;
       consoleSpy.mockClear();
 
       voiceAgent.sendContextualUpdate('Context while disconnected');

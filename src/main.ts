@@ -404,7 +404,6 @@ class HamsaVoiceAgent extends EventEmitter {
   wakeLockManager: ScreenWakeLock;
 
   /** Flag to track if the user initiated the call end to prevent duplicate disconnection logic */
-  // biome-ignore lint/style/useReadonlyClassProperties: userInitiatedEnd is reassigned during call lifecycle
   private userInitiatedEnd = false;
 
   /** Debug logger instance for conditional logging */
@@ -1115,43 +1114,120 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   end(): void {
     const endStartTime = Date.now();
-    try {
-      this.logger.log('end() called - START DISCONNECT TIMING', {
-        source: 'HamsaVoiceAgent',
-        error: {
-          timestamp: endStartTime,
-          userInitiatedEnd: this.userInitiatedEnd,
-          isConnected: this.liveKitManager?.isConnected ?? false,
-          stack: new Error('Stack trace').stack,
-        },
+    this.logger.log('end() called - START DISCONNECT TIMING', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: endStartTime,
+        userInitiatedEnd: this.userInitiatedEnd,
+        isConnected: this.liveKitManager?.isConnected ?? false,
+        stack: new Error('Stack trace').stack,
+      },
+    });
+
+    // Perform disconnect asynchronously but don't block
+    this.#performDisconnect(endStartTime)
+      .then(() => {
+        const endCompleteTime = Date.now();
+        this.logger.log('end() completed - END DISCONNECT TIMING', {
+          source: 'HamsaVoiceAgent',
+          error: {
+            timestamp: endCompleteTime,
+            totalDuration: endCompleteTime - endStartTime,
+          },
+        });
+      })
+      .catch((error) => {
+        this.#handleEndError(error, endStartTime);
       });
 
-      this.#performDisconnect(endStartTime);
-      this.#releaseWakeLock();
-
-      const endCompleteTime = Date.now();
-      this.logger.log('end() completed - END DISCONNECT TIMING', {
-        source: 'HamsaVoiceAgent',
-        error: {
-          timestamp: endCompleteTime,
-          totalDuration: endCompleteTime - endStartTime,
-        },
-      });
-    } catch (error) {
-      this.#handleEndError(error, endStartTime);
-    }
+    this.#releaseWakeLock();
   }
 
   /**
    * Performs the disconnect operation with timing logs
    * @private
    */
-  #performDisconnect(endStartTime: number): void {
+  async #performDisconnect(endStartTime: number): Promise<void> {
     if (!this.liveKitManager) {
       return;
     }
 
     this.userInitiatedEnd = true;
+
+    // Get room name for destruction API call
+    const roomName = this.liveKitManager.connection.room?.name;
+
+    // Call room destroy API to immediately clean up the room for accurate billing
+    if (roomName) {
+      const destroyApiStart = Date.now();
+      this.logger.log('Calling room destroy API', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          timestamp: destroyApiStart,
+          roomName,
+        },
+      });
+
+      try {
+        const response = await fetch(
+          `${this.API_URL}/v1/voice-agents/room/destroy`,
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Token ${this.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ roomName }),
+          }
+        );
+
+        const destroyApiEnd = Date.now();
+
+        if (response.ok) {
+          const result = await response.json();
+          this.logger.log('Room destroy API succeeded', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              timestamp: destroyApiEnd,
+              duration: destroyApiEnd - destroyApiStart,
+              success: result.success,
+              message: result.message,
+            },
+          });
+        } else {
+          const errorText = await response.text();
+          this.logger.error('Room destroy API failed', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              timestamp: destroyApiEnd,
+              duration: destroyApiEnd - destroyApiStart,
+              status: response.status,
+              statusText: response.statusText,
+              errorText,
+            },
+          });
+        }
+      } catch (error) {
+        const destroyApiError = Date.now();
+        this.logger.error('Room destroy API threw error', {
+          source: 'HamsaVoiceAgent',
+          error: {
+            timestamp: destroyApiError,
+            duration: destroyApiError - destroyApiStart,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        });
+        // Continue with disconnect even if destroy API fails
+      }
+    } else {
+      this.logger.warn('Skipping room destroy API - missing roomName', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          hasRoomName: !!roomName,
+        },
+      });
+    }
 
     const disconnectCallTime = Date.now();
     this.logger.log('Calling liveKitManager.disconnect()', {
@@ -1162,19 +1238,16 @@ class HamsaVoiceAgent extends EventEmitter {
       },
     });
 
-    this.liveKitManager.disconnect();
+    await this.liveKitManager.disconnect();
 
     const afterDisconnectCallTime = Date.now();
-    this.logger.log(
-      'liveKitManager.disconnect() call returned (async, not completed)',
-      {
-        source: 'HamsaVoiceAgent',
-        error: {
-          timestamp: afterDisconnectCallTime,
-          disconnectCallDuration: afterDisconnectCallTime - disconnectCallTime,
-        },
-      }
-    );
+    this.logger.log('liveKitManager.disconnect() completed', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: afterDisconnectCallTime,
+        disconnectCallDuration: afterDisconnectCallTime - disconnectCallTime,
+      },
+    });
 
     this.emit('callEnded');
 

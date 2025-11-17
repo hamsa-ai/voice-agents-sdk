@@ -585,8 +585,12 @@ describe('HamsaVoiceAgent', () => {
       voiceAgent.resume();
       expect(lifecycleEvents).toContain('callResumed');
 
-      // End call
+      // End call - wait for async callEnded event
+      const callEndedPromise = new Promise<void>((resolve) => {
+        voiceAgent.once('callEnded', resolve);
+      });
       voiceAgent.end();
+      await callEndedPromise;
       expect(lifecycleEvents).toContain('callEnded');
 
       // Verify wake lock was managed correctly
