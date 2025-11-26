@@ -197,6 +197,28 @@ describe('Advanced Audio Controls', () => {
       expect(typeof isMuted).toBe('boolean');
     });
 
+    test('should emit micMuted event when muting through HamsaVoiceAgent', async () => {
+      await voiceAgent.start({ agentId: 'test-agent' });
+
+      const micMutedSpy = jest.fn();
+      voiceAgent.on('micMuted', micMutedSpy);
+
+      voiceAgent.setMicMuted(true);
+
+      expect(micMutedSpy).toHaveBeenCalled();
+    });
+
+    test('should emit micUnmuted event when unmuting through HamsaVoiceAgent', async () => {
+      await voiceAgent.start({ agentId: 'test-agent' });
+
+      const micUnmutedSpy = jest.fn();
+      voiceAgent.on('micUnmuted', micUnmutedSpy);
+
+      voiceAgent.setMicMuted(false);
+
+      expect(micUnmutedSpy).toHaveBeenCalled();
+    });
+
     test('should forward frequency data methods to audio manager', async () => {
       await voiceAgent.start({ agentId: 'test-agent' });
 

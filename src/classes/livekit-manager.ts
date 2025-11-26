@@ -998,6 +998,10 @@ export default class LiveKitManager extends EventEmitter {
       }
     });
 
+    // Forward microphone control events for UI synchronization
+    this.audioManager.on('micMuted', () => this.emit('micMuted'));
+    this.audioManager.on('micUnmuted', () => this.emit('micUnmuted'));
+
     // === Analytics Events ===
     // Forward real-time quality monitoring events for dashboard updates
     this.analytics.on('connectionQualityChanged', (data) =>
@@ -1083,18 +1087,12 @@ export default class LiveKitManager extends EventEmitter {
           });
 
           // Delegate audio track processing to audio manager
+          // Note: audioManager.handleTrackSubscribed will emit the trackSubscribed event
           this.audioManager.handleTrackSubscribed(
             track,
             publication,
             participant
           );
-
-          // Forward track subscription event with full track data
-          this.emit('trackSubscribed', {
-            track,
-            publication,
-            participant,
-          });
         },
       ],
       [
@@ -1114,18 +1112,12 @@ export default class LiveKitManager extends EventEmitter {
           });
 
           // Delegate audio track cleanup to audio manager
+          // Note: audioManager.handleTrackUnsubscribed will emit the trackUnsubscribed event
           this.audioManager.handleTrackUnsubscribed(
             track,
             publication,
             participant
           );
-
-          // Forward track unsubscription event with full track data
-          this.emit('trackUnsubscribed', {
-            track,
-            publication,
-            participant,
-          });
         },
       ],
       [

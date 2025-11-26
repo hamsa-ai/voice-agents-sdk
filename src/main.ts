@@ -7,7 +7,6 @@ import type {
   Participant,
   RemoteParticipant,
   RemoteTrack,
-  RemoteTrackPublication,
   Room,
 } from 'livekit-client';
 import LiveKitManager, {
@@ -20,7 +19,12 @@ import LiveKitManager, {
   type TrackStatsResult,
 } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
-import type { LiveKitTokenPayload } from './classes/types';
+import type {
+  ConnectionQualityData,
+  LiveKitTokenPayload,
+  TrackSubscriptionData,
+  TrackUnsubscriptionData,
+} from './classes/types';
 import { createDebugLogger, type DebugLogger } from './utils';
 
 // Re-export AgentState for convenience
@@ -220,17 +224,9 @@ type HamsaVoiceAgentEvents = {
 
   // Track events
   /** Emitted when a remote track is subscribed */
-  trackSubscribed: (data: {
-    track: RemoteTrack;
-    publication: RemoteTrackPublication;
-    participant: RemoteParticipant;
-  }) => void;
+  trackSubscribed: (data: TrackSubscriptionData) => void;
   /** Emitted when a remote track is unsubscribed */
-  trackUnsubscribed: (data: {
-    track: RemoteTrack;
-    publication: RemoteTrackPublication;
-    participant: RemoteParticipant;
-  }) => void;
+  trackUnsubscribed: (data: TrackUnsubscriptionData) => void;
   /** Emitted when a local track is published */
   localTrackPublished: (data: {
     track?: LocalTrack;
@@ -241,14 +237,17 @@ type HamsaVoiceAgentEvents = {
   /** Emitted when analytics data is updated */
   analyticsUpdated: (analytics: CallAnalyticsResult) => void;
   /** Emitted when connection quality changes */
-  connectionQualityChanged: (data: {
-    quality: 'excellent' | 'good' | 'poor';
-    metrics: ConnectionStatsResult;
-  }) => void;
+  connectionQualityChanged: (data: ConnectionQualityData) => void;
   /** Emitted when connection state changes */
   connectionStateChanged: (state: ConnectionState) => void;
   /** Emitted when audio playback state changes */
   audioPlaybackChanged: (playing: boolean) => void;
+
+  // Audio control events
+  /** Emitted when microphone is muted */
+  micMuted: () => void;
+  /** Emitted when microphone is unmuted */
+  micUnmuted: () => void;
 
   // Participant events
   /** Emitted when a participant connects */
@@ -904,7 +903,7 @@ class HamsaVoiceAgent extends EventEmitter {
             error: {
               kind: data.track?.kind,
               trackSid: data.track?.sid,
-              participantSid: data.participant?.sid,
+              participant: data.participant,
             },
           });
           this.emit('trackSubscribed', data);
@@ -915,7 +914,7 @@ class HamsaVoiceAgent extends EventEmitter {
             error: {
               kind: data.track?.kind,
               trackSid: data.track?.sid,
-              participantSid: data.participant?.sid,
+              participant: data.participant,
             },
           });
           this.emit('trackUnsubscribed', data);
@@ -987,7 +986,7 @@ class HamsaVoiceAgent extends EventEmitter {
             source: 'HamsaVoiceAgent',
             error: {
               quality: data.quality,
-              participant: data.participant.identity,
+              participant: data.participant,
             },
           });
           this.emit('connectionQualityChanged', data);
@@ -1005,6 +1004,18 @@ class HamsaVoiceAgent extends EventEmitter {
             error: { playing },
           });
           this.emit('audioPlaybackChanged', playing);
+        })
+        .on('micMuted', () => {
+          this.logger.log('Microphone muted', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('micMuted');
+        })
+        .on('micUnmuted', () => {
+          this.logger.log('Microphone unmuted', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('micUnmuted');
         })
         .on('analyticsUpdated', (analytics) =>
           this.emit('analyticsUpdated', analytics)

@@ -1,7 +1,8 @@
 import { EventEmitter } from 'events';
-import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Room } from 'livekit-client';
+import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
+import type { TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
 export type { AgentState } from './classes/livekit-manager';
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
@@ -153,17 +154,9 @@ type HamsaVoiceAgentEvents = {
     /** Emitted when an error occurs */
     error: (error: Error | HamsaApiError) => void;
     /** Emitted when a remote track is subscribed */
-    trackSubscribed: (data: {
-        track: RemoteTrack;
-        publication: RemoteTrackPublication;
-        participant: RemoteParticipant;
-    }) => void;
+    trackSubscribed: (data: TrackSubscriptionData) => void;
     /** Emitted when a remote track is unsubscribed */
-    trackUnsubscribed: (data: {
-        track: RemoteTrack;
-        publication: RemoteTrackPublication;
-        participant: RemoteParticipant;
-    }) => void;
+    trackUnsubscribed: (data: TrackUnsubscriptionData) => void;
     /** Emitted when a local track is published */
     localTrackPublished: (data: {
         track?: LocalTrack;
@@ -180,6 +173,10 @@ type HamsaVoiceAgentEvents = {
     connectionStateChanged: (state: ConnectionState) => void;
     /** Emitted when audio playback state changes */
     audioPlaybackChanged: (playing: boolean) => void;
+    /** Emitted when microphone is muted */
+    micMuted: () => void;
+    /** Emitted when microphone is unmuted */
+    micUnmuted: () => void;
     /** Emitted when a participant connects */
     participantConnected: (participant: RemoteParticipant) => void;
     /** Emitted when a participant disconnects */
