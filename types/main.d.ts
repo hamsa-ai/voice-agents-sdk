@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
-import type { TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
+import type { ConnectionQualityData, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
 export type { AgentState } from './classes/livekit-manager';
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
@@ -165,10 +165,7 @@ type HamsaVoiceAgentEvents = {
     /** Emitted when analytics data is updated */
     analyticsUpdated: (analytics: CallAnalyticsResult) => void;
     /** Emitted when connection quality changes */
-    connectionQualityChanged: (data: {
-        quality: 'excellent' | 'good' | 'poor';
-        metrics: ConnectionStatsResult;
-    }) => void;
+    connectionQualityChanged: (data: ConnectionQualityData) => void;
     /** Emitted when connection state changes */
     connectionStateChanged: (state: ConnectionState) => void;
     /** Emitted when audio playback state changes */
