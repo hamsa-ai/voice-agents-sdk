@@ -250,15 +250,17 @@ describe('LiveKitManager Analytics', () => {
 
     test('should emit connection quality change events', async () => {
       const mockData = {
-        quality: 'good',
+        quality: 'good' as const,
         participant: 'test-participant',
-        metrics: { latency: 50, quality: 'good' },
+        metrics: { quality: 'good' },
       };
 
       const connectionQualityPromise = new Promise<void>((resolve) => {
         manager.on('connectionQualityChanged', (data) => {
           expect(data.quality).toBe('good');
           expect(data.participant).toBe('test-participant');
+          expect(data.metrics).toEqual({ quality: 'good' });
+          expect(typeof data.participant).toBe('string');
           resolve();
         });
       });
@@ -347,6 +349,9 @@ describe('LiveKitManager Analytics', () => {
         manager.on('trackSubscribed', (data) => {
           expect(data.track.sid).toBe('test-track-sid');
           expect(data.participant).toBe('agent');
+          expect(typeof data.participant).toBe('string');
+          expect(data.publication).toBeDefined();
+          expect(data.trackStats).toBeDefined();
           resolve();
         });
       });

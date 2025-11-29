@@ -7,7 +7,6 @@ import type {
   Participant,
   RemoteParticipant,
   RemoteTrack,
-  RemoteTrackPublication,
   Room,
 } from 'livekit-client';
 import LiveKitManager, {
@@ -20,7 +19,13 @@ import LiveKitManager, {
   type TrackStatsResult,
 } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
-import type { LiveKitTokenPayload } from './classes/types';
+import type {
+  ConnectionQualityData,
+  LiveKitTokenPayload,
+  TrackSubscriptionData,
+  TrackUnsubscriptionData,
+} from './classes/types';
+import { createDebugLogger, type DebugLogger } from './utils';
 
 // Re-export AgentState for convenience
 export type { AgentState } from './classes/livekit-manager';
@@ -49,6 +54,8 @@ type HamsaVoiceAgentConfig = {
   API_URL?: string;
   /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
   LIVEKIT_URL?: string;
+  /** Enable debug logging for troubleshooting. Defaults to false */
+  debug?: boolean;
 };
 
 /**
@@ -217,17 +224,9 @@ type HamsaVoiceAgentEvents = {
 
   // Track events
   /** Emitted when a remote track is subscribed */
-  trackSubscribed: (data: {
-    track: RemoteTrack;
-    publication: RemoteTrackPublication;
-    participant: RemoteParticipant;
-  }) => void;
+  trackSubscribed: (data: TrackSubscriptionData) => void;
   /** Emitted when a remote track is unsubscribed */
-  trackUnsubscribed: (data: {
-    track: RemoteTrack;
-    publication: RemoteTrackPublication;
-    participant: RemoteParticipant;
-  }) => void;
+  trackUnsubscribed: (data: TrackUnsubscriptionData) => void;
   /** Emitted when a local track is published */
   localTrackPublished: (data: {
     track?: LocalTrack;
@@ -238,14 +237,17 @@ type HamsaVoiceAgentEvents = {
   /** Emitted when analytics data is updated */
   analyticsUpdated: (analytics: CallAnalyticsResult) => void;
   /** Emitted when connection quality changes */
-  connectionQualityChanged: (data: {
-    quality: 'excellent' | 'good' | 'poor';
-    metrics: ConnectionStatsResult;
-  }) => void;
+  connectionQualityChanged: (data: ConnectionQualityData) => void;
   /** Emitted when connection state changes */
   connectionStateChanged: (state: ConnectionState) => void;
   /** Emitted when audio playback state changes */
   audioPlaybackChanged: (playing: boolean) => void;
+
+  // Audio control events
+  /** Emitted when microphone is muted */
+  micMuted: () => void;
+  /** Emitted when microphone is unmuted */
+  micUnmuted: () => void;
 
   // Participant events
   /** Emitted when a participant connects */
@@ -391,15 +393,20 @@ class HamsaVoiceAgent extends EventEmitter {
   /** LiveKit RTC WebSocket URL */
   LIVEKIT_URL: string;
 
+  /** Enable debug logging for troubleshooting */
+  debug: boolean;
+
   /** Job ID for tracking conversation completion status */
   jobId: string | null = null;
 
   /** Screen wake lock manager to prevent device sleep during calls */
   wakeLockManager: ScreenWakeLock;
 
-  /** Flag to track if the user initiated the call end */
-  // biome-ignore lint/style/useReadonlyClassProperties: userInitiatedEnd is reassigned during call lifecycle
+  /** Flag to track if the user initiated the call end to prevent duplicate disconnection logic */
   private userInitiatedEnd = false;
+
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
 
   /**
    * Creates a new HamsaVoiceAgent instance
@@ -428,6 +435,7 @@ class HamsaVoiceAgent extends EventEmitter {
     {
       API_URL = 'https://api.tryhamsa.com',
       LIVEKIT_URL = 'wss://rtc.eu.tryhamsa.com',
+      debug = false,
     }: HamsaVoiceAgentConfig = {}
   ) {
     super();
@@ -435,6 +443,8 @@ class HamsaVoiceAgent extends EventEmitter {
     this.apiKey = apiKey;
     this.API_URL = API_URL;
     this.LIVEKIT_URL = LIVEKIT_URL;
+    this.debug = debug;
+    this.logger = createDebugLogger(debug);
     this.jobId = null;
     this.wakeLockManager = new ScreenWakeLock();
   }
@@ -581,8 +591,12 @@ class HamsaVoiceAgent extends EventEmitter {
     if (this.liveKitManager?.isConnected) {
       // Send user activity signal to prevent agent interruption
       // This could be implemented as a special data message to the agent
-      // biome-ignore lint/suspicious/noConsole: Tests assert on this log output
-      console.log('User activity detected - preventing agent interruption');
+      this.logger.log(
+        'User activity detected - preventing agent interruption',
+        {
+          source: 'HamsaVoiceAgent',
+        }
+      );
     }
   }
 
@@ -612,8 +626,10 @@ class HamsaVoiceAgent extends EventEmitter {
   sendContextualUpdate(context: string): void {
     if (this.liveKitManager?.isConnected) {
       // Send contextual update without triggering agent response
-      // biome-ignore lint/suspicious/noConsole: Tests assert on this log output
-      console.log('Sending contextual update:', context);
+      this.logger.log('Sending contextual update', {
+        source: 'HamsaVoiceAgent',
+        error: { context },
+      });
       // This could be implemented as a special non-conversational message
     }
   }
@@ -748,6 +764,7 @@ class HamsaVoiceAgent extends EventEmitter {
    * await agent.start({ agentId: 'my_agent', voiceEnablement: true });
    * ```
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Method sets up multiple event listeners with logging - refactoring would split event handling logic
   async start({
     agentId,
     params = {},
@@ -759,10 +776,24 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
   }: StartOptions): Promise<void> {
     try {
+      this.logger.log('SDK initialized - disconnect debugging enabled', {
+        source: 'HamsaVoiceAgent',
+      });
+
       // Reset user-initiated end flag for new call
       this.userInitiatedEnd = false;
 
       // Get LiveKit access token
+      this.logger.log('Starting conversation initialization', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          agentId,
+          voiceEnablement,
+          toolsCount: tools?.length ?? 0,
+          hasParams: Object.keys(params).length > 0,
+        },
+      });
+
       const accessToken = await this.#initializeLiveKitConversation(
         agentId,
         params,
@@ -771,66 +802,221 @@ class HamsaVoiceAgent extends EventEmitter {
       );
 
       // Create LiveKitManager instance
+      this.logger.log('Creating LiveKitManager instance', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          livekitUrl: this.LIVEKIT_URL,
+          tokenLength: accessToken.length,
+          debug: this.debug,
+        },
+      });
+
       this.liveKitManager = new LiveKitManager(
         this.LIVEKIT_URL,
         accessToken,
-        tools
+        tools,
+        this.debug
       );
+
+      this.logger.log('LiveKitManager created, setting up event listeners', {
+        source: 'HamsaVoiceAgent',
+      });
 
       // Set up event listeners to forward LiveKitManager events
       this.liveKitManager
-        .on('error', (error) => this.emit('error', error))
-        .on('connected', () => this.emit('start'))
-        .on('transcriptionReceived', (transcription) =>
-          this.emit('transcriptionReceived', transcription)
-        )
-        .on('answerReceived', (answer) => this.emit('answerReceived', answer))
-        .on('speaking', () => this.emit('speaking'))
-        .on('listening', () => this.emit('listening'))
+        .on('error', (error) => {
+          this.logger.error('LiveKitManager error event', {
+            source: 'HamsaVoiceAgent',
+            error,
+          });
+          this.emit('error', error);
+        })
+        .on('connected', () => {
+          this.logger.log('LiveKit connection established', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('start');
+        })
+        .on('transcriptionReceived', (transcription) => {
+          const TEXT_PREVIEW_LENGTH = 50;
+          this.logger.log('Transcription received from user', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              length: transcription.length,
+              preview: transcription.substring(0, TEXT_PREVIEW_LENGTH),
+            },
+          });
+          this.emit('transcriptionReceived', transcription);
+        })
+        .on('answerReceived', (answer) => {
+          const TEXT_PREVIEW_LENGTH = 50;
+          this.logger.log('Answer received from agent', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              length: answer.length,
+              preview: answer.substring(0, TEXT_PREVIEW_LENGTH),
+            },
+          });
+          this.emit('answerReceived', answer);
+        })
+        .on('speaking', () => {
+          this.logger.log('Agent started speaking', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('speaking');
+        })
+        .on('listening', () => {
+          this.logger.log('Agent started listening', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('listening');
+        })
         .on('disconnected', () => {
-          // Always emit callEnded when connection ends, regardless of who initiated it
+          const disconnectedEventTime = Date.now();
+          this.logger.log(
+            'disconnected event fired - room connection closed - TIMING',
+            {
+              source: 'HamsaVoiceAgent',
+              error: {
+                timestamp: disconnectedEventTime,
+                userInitiatedEnd: this.userInitiatedEnd,
+              },
+            }
+          );
+          // Always emit callEnded when connection ends
           this.emit('callEnded');
+          const closedEventTime = Date.now();
           this.emit('closed');
+          this.logger.log('closed event emitted - TIMING', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              timestamp: closedEventTime,
+              timeSinceDisconnected: closedEventTime - disconnectedEventTime,
+            },
+          });
           // Reset the flag when fully disconnected
           this.userInitiatedEnd = false;
         })
-        .on('trackSubscribed', (data) => this.emit('trackSubscribed', data))
-        .on('trackUnsubscribed', (data) => this.emit('trackUnsubscribed', data))
-        .on('localTrackPublished', (data) =>
-          this.emit('localTrackPublished', data)
-        )
-        .on('info', (info) => this.emit('info', info))
+        .on('trackSubscribed', (data) => {
+          this.logger.log('Track subscribed', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              kind: data.track?.kind,
+              trackSid: data.track?.sid,
+              participant: data.participant,
+            },
+          });
+          this.emit('trackSubscribed', data);
+        })
+        .on('trackUnsubscribed', (data) => {
+          this.logger.log('Track unsubscribed', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              kind: data.track?.kind,
+              trackSid: data.track?.sid,
+              participant: data.participant,
+            },
+          });
+          this.emit('trackUnsubscribed', data);
+        })
+        .on('localTrackPublished', (data) => {
+          this.logger.log('Local track published', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              kind: data.publication?.kind,
+              trackSid: data.publication?.trackSid,
+            },
+          });
+          this.emit('localTrackPublished', data);
+        })
+        .on('info', (info) => {
+          this.logger.log('Info message received', {
+            source: 'HamsaVoiceAgent',
+            error: { info },
+          });
+          this.emit('info', info);
+        })
 
         // Forward new analytics events
-        .on('reconnecting', () => this.emit('reconnecting'))
-        .on('reconnected', () => this.emit('reconnected'))
-        .on('participantConnected', (participant) =>
-          this.emit('participantConnected', participant)
-        )
-        .on('participantDisconnected', (participant) => {
-          this.emit('participantDisconnected', participant);
-
-          // Check if this is an agent disconnecting (agent-initiated call end)
-          if (
-            participant.identity?.includes('agent') &&
-            !this.userInitiatedEnd
-          ) {
-            // Agent ended the call, not the user
-            this.emit('callEnded');
-          }
+        .on('reconnecting', () => {
+          this.logger.warn('Connection reconnecting', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('reconnecting');
         })
-        .on('agentStateChanged', (state) =>
-          this.emit('agentStateChanged', state)
-        )
-        .on('connectionQualityChanged', (data) =>
-          this.emit('connectionQualityChanged', data)
-        )
-        .on('connectionStateChanged', (state) =>
-          this.emit('connectionStateChanged', state)
-        )
-        .on('audioPlaybackChanged', (playing) =>
-          this.emit('audioPlaybackChanged', playing)
-        )
+        .on('reconnected', () => {
+          this.logger.log('Connection reconnected successfully', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('reconnected');
+        })
+        .on('participantConnected', (participant) => {
+          this.logger.log('Participant connected', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              identity: participant.identity,
+              sid: participant.sid,
+            },
+          });
+          this.emit('participantConnected', participant);
+        })
+        .on('participantDisconnected', (participant) => {
+          this.logger.log('Participant disconnected', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              identity: participant.identity,
+              sid: participant.sid,
+              hasAgentInIdentity: participant.identity?.includes('agent'),
+              remainingCount:
+                this.liveKitManager?.connection.participants.size ?? 0,
+            },
+          });
+
+          this.emit('participantDisconnected', participant);
+        })
+        .on('agentStateChanged', (state) => {
+          this.logger.log('Agent state changed', {
+            source: 'HamsaVoiceAgent',
+            error: { state },
+          });
+          this.emit('agentStateChanged', state);
+        })
+        .on('connectionQualityChanged', (data) => {
+          this.logger.log('Connection quality changed', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              quality: data.quality,
+              participant: data.participant,
+            },
+          });
+          this.emit('connectionQualityChanged', data);
+        })
+        .on('connectionStateChanged', (state) => {
+          this.logger.log('Connection state changed', {
+            source: 'HamsaVoiceAgent',
+            error: { state },
+          });
+          this.emit('connectionStateChanged', state);
+        })
+        .on('audioPlaybackChanged', (playing) => {
+          this.logger.log('Audio playback state changed', {
+            source: 'HamsaVoiceAgent',
+            error: { playing },
+          });
+          this.emit('audioPlaybackChanged', playing);
+        })
+        .on('micMuted', () => {
+          this.logger.log('Microphone muted', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('micMuted');
+        })
+        .on('micUnmuted', () => {
+          this.logger.log('Microphone unmuted', {
+            source: 'HamsaVoiceAgent',
+          });
+          this.emit('micUnmuted');
+        })
         .on('analyticsUpdated', (analytics) =>
           this.emit('analyticsUpdated', analytics)
         )
@@ -842,16 +1028,56 @@ class HamsaVoiceAgent extends EventEmitter {
         );
 
       // Connect to LiveKit room
+      this.logger.log('Connecting to LiveKit room', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          livekitUrl: this.LIVEKIT_URL,
+        },
+      });
+      const connectStart = Date.now();
       await this.liveKitManager.connect();
+      const connectDuration = Date.now() - connectStart;
+      this.logger.log('Connected to LiveKit room', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          duration: `${connectDuration}ms`,
+        },
+      });
 
       // Acquire the screen wake lock when the call starts
+      this.logger.log('Acquiring screen wake lock', {
+        source: 'HamsaVoiceAgent',
+      });
       try {
         await this.wakeLockManager.acquire();
-      } catch {
-        // Ignore wake lock acquisition errors
+        this.logger.log('Screen wake lock acquired successfully', {
+          source: 'HamsaVoiceAgent',
+        });
+      } catch (error) {
+        this.logger.warn('Failed to acquire screen wake lock', {
+          source: 'HamsaVoiceAgent',
+          error: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
       }
+      this.logger.log('Call started successfully', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          totalStartupTime: `${Date.now() - connectStart}ms`,
+        },
+      });
       this.emit('callStarted');
     } catch (error) {
+      this.logger.error('Failed to start call', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          isHamsaApiError: error instanceof HamsaApiError,
+        },
+      });
+
       if (this.listenerCount('error') > 0) {
         // Forward HamsaApiError instances directly to preserve messageKey
         if (error instanceof HamsaApiError) {
@@ -898,29 +1124,186 @@ class HamsaVoiceAgent extends EventEmitter {
    * ```
    */
   end(): void {
-    try {
-      if (this.liveKitManager) {
-        this.userInitiatedEnd = true; // Mark as user-initiated
-        this.liveKitManager.disconnect();
-        this.emit('callEnded');
-      }
-      // Release screen wake lock to allow device sleep
-      if (this.wakeLockManager?.isActive()) {
-        this.wakeLockManager.release().catch((_err) => {
-          // Intentionally ignore wake lock release errors
+    const endStartTime = Date.now();
+    this.logger.log('end() called - START DISCONNECT TIMING', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: endStartTime,
+        userInitiatedEnd: this.userInitiatedEnd,
+        isConnected: this.liveKitManager?.isConnected ?? false,
+        stack: new Error('Stack trace').stack,
+      },
+    });
+
+    // Perform disconnect asynchronously but don't block
+    this.#performDisconnect(endStartTime)
+      .then(() => {
+        const endCompleteTime = Date.now();
+        this.logger.log('end() completed - END DISCONNECT TIMING', {
+          source: 'HamsaVoiceAgent',
+          error: {
+            timestamp: endCompleteTime,
+            totalDuration: endCompleteTime - endStartTime,
+          },
         });
-      }
-    } catch (error) {
-      if (this.listenerCount('error') > 0) {
-        // Forward HamsaApiError instances directly to preserve messageKey
-        if (error instanceof HamsaApiError) {
-          this.emit('error', error);
+      })
+      .catch((error) => {
+        this.#handleEndError(error, endStartTime);
+      });
+
+    this.#releaseWakeLock();
+  }
+
+  /**
+   * Performs the disconnect operation with timing logs
+   * @private
+   */
+  async #performDisconnect(endStartTime: number): Promise<void> {
+    if (!this.liveKitManager) {
+      return;
+    }
+
+    this.userInitiatedEnd = true;
+
+    // Get room name for destruction API call
+    const roomName = this.liveKitManager.connection.room?.name;
+
+    // Call room destroy API to immediately clean up the room for accurate billing
+    if (roomName) {
+      const destroyApiStart = Date.now();
+      this.logger.log('Calling room destroy API', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          timestamp: destroyApiStart,
+          roomName,
+        },
+      });
+
+      try {
+        const response = await fetch(
+          `${this.API_URL}/v1/voice-agents/room/destroy`,
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Token ${this.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ roomName }),
+          }
+        );
+
+        const destroyApiEnd = Date.now();
+
+        if (response.ok) {
+          const result = await response.json();
+          this.logger.log('Room destroy API succeeded', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              timestamp: destroyApiEnd,
+              duration: destroyApiEnd - destroyApiStart,
+              success: result.success,
+              message: result.message,
+            },
+          });
         } else {
-          // For other errors, wrap with context
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          this.emit('error', new Error(`Failed to end call: ${errorMessage}`));
+          const errorText = await response.text();
+          this.logger.error('Room destroy API failed', {
+            source: 'HamsaVoiceAgent',
+            error: {
+              timestamp: destroyApiEnd,
+              duration: destroyApiEnd - destroyApiStart,
+              status: response.status,
+              statusText: response.statusText,
+              errorText,
+            },
+          });
         }
+      } catch (error) {
+        const destroyApiError = Date.now();
+        this.logger.error('Room destroy API threw error', {
+          source: 'HamsaVoiceAgent',
+          error: {
+            timestamp: destroyApiError,
+            duration: destroyApiError - destroyApiStart,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        });
+        // Continue with disconnect even if destroy API fails
+      }
+    } else {
+      this.logger.warn('Skipping room destroy API - missing roomName', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          hasRoomName: !!roomName,
+        },
+      });
+    }
+
+    const disconnectCallTime = Date.now();
+    this.logger.log('Calling liveKitManager.disconnect()', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: disconnectCallTime,
+        timeSinceEndCalled: disconnectCallTime - endStartTime,
+      },
+    });
+
+    await this.liveKitManager.disconnect();
+
+    const afterDisconnectCallTime = Date.now();
+    this.logger.log('liveKitManager.disconnect() completed', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: afterDisconnectCallTime,
+        disconnectCallDuration: afterDisconnectCallTime - disconnectCallTime,
+      },
+    });
+
+    this.emit('callEnded');
+
+    const afterCallEndedTime = Date.now();
+    this.logger.log('callEnded event emitted', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        timestamp: afterCallEndedTime,
+        totalTimeInEndMethod: afterCallEndedTime - endStartTime,
+      },
+    });
+  }
+
+  /**
+   * Releases the screen wake lock
+   * @private
+   */
+  #releaseWakeLock(): void {
+    if (this.wakeLockManager?.isActive()) {
+      this.wakeLockManager.release().catch((_err) => {
+        // Intentionally ignore wake lock release errors
+      });
+    }
+  }
+
+  /**
+   * Handles errors that occur during end()
+   * @private
+   */
+  #handleEndError(error: unknown, endStartTime: number): void {
+    this.logger.error('end() threw error', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        error: error instanceof Error ? error.message : String(error),
+        timeSinceStart: Date.now() - endStartTime,
+      },
+    });
+
+    if (this.listenerCount('error') > 0) {
+      if (error instanceof HamsaApiError) {
+        this.emit('error', error);
+      } else {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.emit('error', new Error(`Failed to end call: ${errorMessage}`));
       }
     }
   }
@@ -1163,6 +1546,16 @@ class HamsaVoiceAgent extends EventEmitter {
     params: Record<string, unknown>,
     headers: Record<string, string>
   ): Promise<{ liveKitAccessToken: string; jobId?: string }> {
+    this.logger.log('Fetching participant token from API', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        voiceAgentId,
+        apiUrl: this.API_URL,
+        paramsCount: Object.keys(params).length,
+      },
+    });
+
+    const startTime = Date.now();
     const tokenResponse = await fetch(
       `${this.API_URL}/v1/voice-agents/room/participant-token`,
       {
@@ -1172,15 +1565,49 @@ class HamsaVoiceAgent extends EventEmitter {
       }
     );
 
+    const duration = Date.now() - startTime;
+    this.logger.log('Received API response for participant token', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        status: tokenResponse.status,
+        ok: tokenResponse.ok,
+        duration: `${duration}ms`,
+      },
+    });
+
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
+      this.logger.error('API request failed for participant token', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          status: tokenResponse.status,
+          statusText: tokenResponse.statusText,
+          errorText,
+        },
+      });
       this.#handleApiError(tokenResponse, errorText, true);
     }
 
     const tokenResult = await tokenResponse.json();
     if (!(tokenResult?.success && tokenResult?.data?.liveKitAccessToken)) {
+      this.logger.error('Invalid token response structure', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          success: tokenResult?.success,
+          hasToken: !!tokenResult?.data?.liveKitAccessToken,
+        },
+      });
       throw new Error('Failed to get LiveKit access token');
     }
+
+    this.logger.log('Successfully received LiveKit access token', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        tokenLength: tokenResult.data.liveKitAccessToken.length,
+        hasJobId: !!tokenResult.data.jobId,
+        jobId: tokenResult.data.jobId,
+      },
+    });
 
     return tokenResult.data;
   }
@@ -1219,6 +1646,18 @@ class HamsaVoiceAgent extends EventEmitter {
       channelType: 'Web',
     };
 
+    this.logger.log('Initializing conversation with API', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        voiceAgentId,
+        toolsCount: llmtools.length,
+        voiceEnablement,
+        jobId: conversationBody.jobId,
+        channelType: conversationBody.channelType,
+      },
+    });
+
+    const startTime = Date.now();
     const conversationResponse = await fetch(
       `${this.API_URL}/v1/voice-agents/room/conversation-init`,
       {
@@ -1229,10 +1668,32 @@ class HamsaVoiceAgent extends EventEmitter {
       }
     );
 
+    const duration = Date.now() - startTime;
+    this.logger.log('Received conversation init response', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        status: conversationResponse.status,
+        ok: conversationResponse.ok,
+        duration: `${duration}ms`,
+      },
+    });
+
     if (!conversationResponse.ok) {
       const errorText = await conversationResponse.text();
+      this.logger.error('Conversation initialization failed', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          status: conversationResponse.status,
+          statusText: conversationResponse.statusText,
+          errorText,
+        },
+      });
       this.#handleApiError(conversationResponse, errorText, false);
     }
+
+    this.logger.log('Conversation initialized successfully', {
+      source: 'HamsaVoiceAgent',
+    });
   }
 
   /**
@@ -1244,19 +1705,56 @@ class HamsaVoiceAgent extends EventEmitter {
     endpointJobId: string | undefined,
     voiceAgentId: string
   ): string {
+    const TOKEN_PREVIEW_LENGTH = 20;
+    this.logger.log('Parsing JWT token for jobId', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        tokenPreview: liveKitAccessToken.substring(0, TOKEN_PREVIEW_LENGTH),
+        endpointJobId,
+        voiceAgentId,
+      },
+    });
+
     try {
       const payload = jwtDecode<LiveKitTokenPayload>(liveKitAccessToken);
+      this.logger.log('JWT token parsed successfully', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          hasRoomConfig: !!payload.roomConfig,
+          hasAgents: !!payload.roomConfig?.agents,
+          agentsCount: payload.roomConfig?.agents?.length ?? 0,
+        },
+      });
+
       const agentsMeta = payload?.roomConfig?.agents?.[0]?.metadata;
       if (typeof agentsMeta === 'string') {
         const metaObj = JSON.parse(agentsMeta) as { jobId?: unknown };
         if (typeof metaObj.jobId === 'string' && metaObj.jobId.length > 0) {
+          this.logger.log('Extracted jobId from token metadata', {
+            source: 'HamsaVoiceAgent',
+            error: { jobId: metaObj.jobId },
+          });
           return metaObj.jobId;
         }
       }
-    } catch {
-      // Ignore token parsing errors and fall back
+    } catch (error) {
+      this.logger.warn('Failed to parse jobId from token, using fallback', {
+        source: 'HamsaVoiceAgent',
+        error: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
-    return endpointJobId ?? voiceAgentId;
+
+    const fallbackJobId = endpointJobId ?? voiceAgentId;
+    this.logger.log('Using fallback jobId', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        jobId: fallbackJobId,
+        source: endpointJobId ? 'endpoint' : 'voiceAgentId',
+      },
+    });
+    return fallbackJobId;
   }
 
   /**

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
-import HamsaVoiceAgent, { HamsaApiError } from '../src/main';
+import HamsaVoiceAgent, {
+  HamsaApiError,
+  type HamsaVoiceAgentEvents,
+} from '../src/main';
 import { mockSuccessfulConversationInit } from './utils/fetch-mocks';
 import {
   AGENT_CONFIGS,
@@ -310,7 +313,9 @@ describe('HamsaVoiceAgent', () => {
       };
 
       // Register all event listeners
-      for (const eventName of Object.keys(events)) {
+      for (const eventName of Object.keys(events) as Array<
+        keyof typeof events
+      >) {
         voiceAgent.on(eventName, events[eventName]);
       }
 
@@ -347,12 +352,12 @@ describe('HamsaVoiceAgent', () => {
         voiceAgent.liveKitManager.emit('trackSubscribed', {
           track: { kind: 'audio', mediaStreamTrack: {} },
           publication: {},
-          participant: { identity: 'agent' },
+          participant: 'agent',
         });
         voiceAgent.liveKitManager.emit('trackUnsubscribed', {
           track: { kind: 'audio' },
           publication: {},
-          participant: { identity: 'agent' },
+          participant: 'agent',
         });
         voiceAgent.liveKitManager.emit('localTrackPublished', {
           track: { source: 'microphone', mediaStreamTrack: {} },
@@ -368,20 +373,83 @@ describe('HamsaVoiceAgent', () => {
         expect(events.answerReceived).toHaveBeenCalledWith('test answer');
         expect(events.info).toHaveBeenCalledWith({ type: 'test info' });
         expect(events.closed).toHaveBeenCalled();
-        expect(events.trackSubscribed).toHaveBeenCalled();
-        expect(events.trackUnsubscribed).toHaveBeenCalled();
+        expect(events.trackSubscribed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            track: expect.any(Object),
+            publication: expect.any(Object),
+            participant: 'agent',
+          })
+        );
+        expect(events.trackUnsubscribed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            track: expect.any(Object),
+            publication: expect.any(Object),
+            participant: 'agent',
+          })
+        );
         expect(events.localTrackPublished).toHaveBeenCalled();
       }
 
       // Test lifecycle events
       voiceAgent.pause();
-      expect(events.callPaused).toHaveBeenCalled();
+    });
 
-      voiceAgent.resume();
-      expect(events.callResumed).toHaveBeenCalled();
+    test('should forward connectionQualityChanged event with correct data structure', async () => {
+      const connectionQualitySpy = jest.fn();
+      voiceAgent.on('connectionQualityChanged', connectionQualitySpy);
 
-      voiceAgent.end();
-      expect(events.callEnded).toHaveBeenCalled();
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+        tools: [],
+      });
+
+      if (voiceAgent.liveKitManager) {
+        const mockData = {
+          quality: 'good' as const,
+          participant: 'test-participant',
+          metrics: { quality: 'good' },
+        };
+
+        voiceAgent.liveKitManager.emit('connectionQualityChanged', mockData);
+
+        expect(connectionQualitySpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            quality: 'good',
+            participant: 'test-participant',
+            metrics: { quality: 'good' },
+          })
+        );
+        const firstCall = connectionQualitySpy.mock.calls[0];
+        if (firstCall?.[0]) {
+          expect(
+            typeof (firstCall[0] as { participant: string }).participant
+          ).toBe('string');
+        }
+      }
+    });
+
+    test('should forward micMuted and micUnmuted events', async () => {
+      const micMutedSpy = jest.fn();
+      const micUnmutedSpy = jest.fn();
+      voiceAgent.on('micMuted', micMutedSpy);
+      voiceAgent.on('micUnmuted', micUnmutedSpy);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+        tools: [],
+      });
+
+      if (voiceAgent.liveKitManager) {
+        voiceAgent.liveKitManager.emit('micMuted');
+        voiceAgent.liveKitManager.emit('micUnmuted');
+
+        expect(micMutedSpy).toHaveBeenCalled();
+        expect(micUnmutedSpy).toHaveBeenCalled();
+      }
     });
 
     test('should maintain event data format compatibility', async () => {
@@ -545,7 +613,9 @@ describe('HamsaVoiceAgent', () => {
         'callEnded',
       ];
 
-      for (const eventName of eventNames) {
+      for (const eventName of eventNames as Array<
+        keyof HamsaVoiceAgentEvents
+      >) {
         voiceAgent.on(eventName, () => lifecycleEvents.push(eventName));
       }
 
@@ -585,8 +655,12 @@ describe('HamsaVoiceAgent', () => {
       voiceAgent.resume();
       expect(lifecycleEvents).toContain('callResumed');
 
-      // End call
+      // End call - wait for async callEnded event
+      const callEndedPromise = new Promise<void>((resolve) => {
+        voiceAgent.once('callEnded', resolve);
+      });
       voiceAgent.end();
+      await callEndedPromise;
       expect(lifecycleEvents).toContain('callEnded');
 
       // Verify wake lock was managed correctly

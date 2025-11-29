@@ -158,6 +158,7 @@
  * - Includes fallback mechanisms for connection reliability
  */
 
+import type { DataPacket_Kind } from '@livekit/protocol';
 import { EventEmitter } from 'events';
 import {
   type ConnectionState,
@@ -167,6 +168,7 @@ import {
   RoomEvent,
   VideoPresets,
 } from 'livekit-client';
+import { createDebugLogger, type DebugLogger } from '../utils';
 import type { ParticipantData } from './types';
 
 /**
@@ -207,6 +209,9 @@ export class LiveKitConnection extends EventEmitter {
   /** Whether we've already emitted a 'connected' event for the current session */
   private hasEmittedConnected = false;
 
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
+
   /**
    * Creates a new LiveKitConnection instance
    *
@@ -216,22 +221,25 @@ export class LiveKitConnection extends EventEmitter {
    *
    * @param lkUrl - LiveKit WebSocket URL (e.g., 'wss://livekit.example.com')
    * @param accessToken - JWT token for room authentication and authorization
+   * @param debug - Enable debug logging (defaults to false)
    *
    * @example
    * ```typescript
    * const connection = new LiveKitConnection(
    *   'wss://rtc.eu.tryhamsa.com',
-   *   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+   *   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+   *   false
    * );
    *
    * // Connection is ready for use
    * await connection.connect();
    * ```
    */
-  constructor(lkUrl: string, accessToken: string) {
+  constructor(lkUrl: string, accessToken: string, debug = false) {
     super();
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
+    this.logger = createDebugLogger(debug);
 
     // Initialize LiveKit Room with optimal configuration for voice agents
     this.room = new Room({
@@ -288,6 +296,20 @@ export class LiveKitConnection extends EventEmitter {
       .on(
         RoomEvent.ConnectionStateChanged,
         this.#handleConnectionStateChanged.bind(this)
+      )
+      .on(RoomEvent.SignalConnected, this.#handleSignalConnected.bind(this))
+      .on(
+        RoomEvent.SignalReconnecting,
+        this.#handleSignalReconnecting.bind(this)
+      )
+      .on(RoomEvent.MediaDevicesError, this.#handleMediaDevicesError.bind(this))
+      .on(
+        RoomEvent.ConnectionQualityChanged,
+        this.#handleConnectionQualityChanged.bind(this)
+      )
+      .on(
+        RoomEvent.DCBufferStatusChanged,
+        this.#handleDCBufferStatusChanged.bind(this)
       );
   }
 
@@ -359,6 +381,15 @@ export class LiveKitConnection extends EventEmitter {
    */
   async connect(): Promise<void> {
     try {
+      this.logger.log('connect() called', {
+        source: 'LiveKitConnection',
+        error: {
+          lkUrl: this.lkUrl,
+          attempt: this.connectionAttempts + 1,
+          stack: new Error('Connection call stack').stack,
+        },
+      });
+
       // Record call initiation time for performance metrics
       this.callStartTime = Date.now();
       this.connectionAttempts++;
@@ -372,6 +403,15 @@ export class LiveKitConnection extends EventEmitter {
       // Establish secure WebRTC connection to LiveKit room
       await this.room?.connect(this.lkUrl, this.accessToken);
 
+      this.logger.log('room.connect() completed successfully', {
+        source: 'LiveKitConnection',
+        error: {
+          connectionTimeMs: Date.now() - connectionStart,
+          roomName: this.room?.name,
+          state: this.room?.state,
+        },
+      });
+
       // Emit connection timing metrics for performance monitoring
       const connectionTime = Date.now() - connectionStart;
       this.emit('connectionEstablished', connectionTime);
@@ -384,6 +424,14 @@ export class LiveKitConnection extends EventEmitter {
         this.hasEmittedConnected = true;
       }
     } catch (error) {
+      this.logger.error('connect() failed', {
+        source: 'LiveKitConnection',
+        error: {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      });
+
       this.emit(
         'connectionError',
         new Error(
@@ -406,12 +454,77 @@ export class LiveKitConnection extends EventEmitter {
    * Disconnects from the LiveKit room
    */
   async disconnect(): Promise<void> {
+    const disconnectStartTime = Date.now();
     try {
+      this.logger.log('LiveKitConnection.disconnect() - START', {
+        source: 'LiveKitConnection',
+        error: {
+          timestamp: disconnectStartTime,
+          isConnected: this.isConnected,
+          roomName: this.room?.name,
+          state: this.room?.state,
+          participantCount: this.participants.size,
+          hasRoom: !!this.room,
+          stack: new Error('Disconnect call stack').stack,
+        },
+      });
+
       if (this.room) {
+        const roomDisconnectStart = Date.now();
+        this.logger.log('Calling room.disconnect() (LiveKit SDK)', {
+          source: 'LiveKitConnection',
+          error: {
+            timestamp: roomDisconnectStart,
+            roomName: this.room?.name,
+            state: this.room?.state,
+          },
+        });
+
         await this.room.disconnect();
+
+        const roomDisconnectEnd = Date.now();
+        this.logger.log('room.disconnect() completed (LiveKit SDK)', {
+          source: 'LiveKitConnection',
+          error: {
+            timestamp: roomDisconnectEnd,
+            roomDisconnectDuration: roomDisconnectEnd - roomDisconnectStart,
+            roomName: this.room?.name,
+            state: this.room?.state,
+          },
+        });
+      } else {
+        this.logger.log('No room to disconnect (room is null)', {
+          source: 'LiveKitConnection',
+          error: {
+            timestamp: Date.now(),
+          },
+        });
       }
+
+      const cleanupStart = Date.now();
       this.#cleanup();
+      const cleanupEnd = Date.now();
+
+      this.logger.log('LiveKitConnection.disconnect() - COMPLETE', {
+        source: 'LiveKitConnection',
+        error: {
+          timestamp: cleanupEnd,
+          cleanupDuration: cleanupEnd - cleanupStart,
+          totalDisconnectDuration: cleanupEnd - disconnectStartTime,
+        },
+      });
     } catch (error) {
+      const errorTime = Date.now();
+      this.logger.error('LiveKitConnection.disconnect() - FAILED', {
+        source: 'LiveKitConnection',
+        error: {
+          timestamp: errorTime,
+          timeSinceStart: errorTime - disconnectStartTime,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      });
+
       this.emit(
         'connectionError',
         new Error(
@@ -512,6 +625,15 @@ export class LiveKitConnection extends EventEmitter {
     try {
       this.isConnected = true;
 
+      this.logger.log('Room Connected event fired', {
+        source: 'LiveKitConnection',
+        error: {
+          roomName: this.room?.name,
+          localParticipant: this.room?.localParticipant?.identity,
+          state: this.room?.state,
+        },
+      });
+
       // Enable microphone after connection
       await this.room?.localParticipant?.setMicrophoneEnabled(true);
 
@@ -521,6 +643,10 @@ export class LiveKitConnection extends EventEmitter {
         this.hasEmittedConnected = true;
       }
     } catch (error) {
+      this.logger.error('Error in handleConnected', {
+        source: 'LiveKitConnection',
+        error,
+      });
       this.emit(
         'connectionError',
         new Error(
@@ -534,9 +660,46 @@ export class LiveKitConnection extends EventEmitter {
    * Handles room disconnection
    */
   #handleDisconnected(): void {
+    const disconnectEventTime = Date.now();
+    this.logger.log(
+      'Room Disconnected event fired (from LiveKit SDK) - TIMING',
+      {
+        source: 'LiveKitConnection',
+        error: {
+          timestamp: disconnectEventTime,
+          roomName: this.room?.name,
+          state: this.room?.state,
+          participantCount: this.participants.size,
+        },
+      }
+    );
+
     this.isConnected = false;
+
+    const emitStart = Date.now();
     this.emit('disconnected');
+    const emitEnd = Date.now();
+
+    this.logger.log('disconnected event emitted to parent - TIMING', {
+      source: 'LiveKitConnection',
+      error: {
+        timestamp: emitEnd,
+        emitDuration: emitEnd - emitStart,
+      },
+    });
+
+    const cleanupStart = Date.now();
     this.#cleanup();
+    const cleanupEnd = Date.now();
+
+    this.logger.log('Room Disconnected handler complete - TIMING', {
+      source: 'LiveKitConnection',
+      error: {
+        timestamp: cleanupEnd,
+        cleanupDuration: cleanupEnd - cleanupStart,
+        totalHandlerDuration: cleanupEnd - disconnectEventTime,
+      },
+    });
   }
 
   /**
@@ -544,6 +707,16 @@ export class LiveKitConnection extends EventEmitter {
    */
   #handleReconnecting(): void {
     this.reconnectionAttempts++;
+
+    this.logger.log('Room Reconnecting', {
+      source: 'LiveKitConnection',
+      error: {
+        attempt: this.reconnectionAttempts,
+        roomName: this.room?.name,
+        state: this.room?.state,
+      },
+    });
+
     this.emit('reconnecting');
   }
 
@@ -552,6 +725,16 @@ export class LiveKitConnection extends EventEmitter {
    */
   #handleReconnected(): void {
     this.isConnected = true;
+
+    this.logger.log('Room Reconnected successfully', {
+      source: 'LiveKitConnection',
+      error: {
+        roomName: this.room?.name,
+        state: this.room?.state,
+        participantCount: this.participants.size,
+      },
+    });
+
     this.emit('reconnected');
   }
 
@@ -559,6 +742,16 @@ export class LiveKitConnection extends EventEmitter {
    * Handles participant connection
    */
   #handleParticipantConnected(participant: RemoteParticipant): void {
+    this.logger.log('Participant connected in LiveKit layer', {
+      source: 'LiveKitConnection',
+      error: {
+        identity: participant.identity,
+        sid: participant.sid,
+        metadata: participant.metadata,
+        totalParticipants: this.participants.size + 1,
+      },
+    });
+
     this.participants.set(participant.sid || 'unknown', {
       identity: participant.identity || 'unknown',
       sid: participant.sid || 'unknown',
@@ -572,6 +765,15 @@ export class LiveKitConnection extends EventEmitter {
    * Handles participant disconnection
    */
   #handleParticipantDisconnected(participant: RemoteParticipant): void {
+    this.logger.log('Participant disconnected in LiveKit layer', {
+      source: 'LiveKitConnection',
+      error: {
+        identity: participant.identity,
+        sid: participant.sid,
+        totalParticipantsBeforeRemoval: this.participants.size,
+      },
+    });
+
     this.participants.delete(participant.sid || 'unknown');
     this.emit('participantDisconnected', participant);
   }
@@ -597,7 +799,90 @@ export class LiveKitConnection extends EventEmitter {
    * Handles connection state changes
    */
   #handleConnectionStateChanged(state: ConnectionState): void {
+    this.logger.log('Connection state changed', {
+      source: 'LiveKitConnection',
+      error: {
+        newState: state,
+        roomName: this.room?.name,
+        participantCount: this.participants.size,
+      },
+    });
+
     this.emit('connectionStateChanged', state);
+  }
+
+  /**
+   * Handles signal connection established
+   */
+  #handleSignalConnected(): void {
+    this.logger.log('Signal connection established', {
+      source: 'LiveKitConnection',
+      error: {
+        roomName: this.room?.name,
+        state: this.room?.state,
+      },
+    });
+  }
+
+  /**
+   * Handles signal reconnection attempts
+   */
+  #handleSignalReconnecting(): void {
+    this.logger.log('Signal reconnecting (signaling server connection lost)', {
+      source: 'LiveKitConnection',
+      error: {
+        roomName: this.room?.name,
+        state: this.room?.state,
+        participantCount: this.participants.size,
+      },
+    });
+  }
+
+  /**
+   * Handles media devices errors
+   */
+  #handleMediaDevicesError(error: Error): void {
+    this.logger.error('Media devices error', {
+      source: 'LiveKitConnection',
+      error: {
+        error: error.message,
+        stack: error.stack,
+        roomName: this.room?.name,
+      },
+    });
+  }
+
+  /**
+   * Handles connection quality changes
+   */
+  #handleConnectionQualityChanged(
+    quality: string,
+    participant: Participant
+  ): void {
+    this.logger.log('Connection quality changed', {
+      source: 'LiveKitConnection',
+      error: {
+        participant: participant.identity,
+        quality,
+        roomName: this.room?.name,
+      },
+    });
+  }
+
+  /**
+   * Handles DataChannel buffer status changes
+   * This is critical for debugging DataChannel errors
+   */
+  #handleDCBufferStatusChanged(isLow: boolean, kind: DataPacket_Kind): void {
+    this.logger.log('DataChannel buffer status changed', {
+      source: 'LiveKitConnection',
+      error: {
+        isLow,
+        kind,
+        roomName: this.room?.name,
+        participantCount: this.participants.size,
+      },
+    });
   }
 
   /**
@@ -609,6 +894,9 @@ export class LiveKitConnection extends EventEmitter {
     this.isConnected = false;
     this.isPaused = false;
     this.hasEmittedConnected = false;
+
+    // Note: Event listeners on the room are automatically cleaned up
+    // when room.disconnect() is called by the LiveKit SDK
   }
 
   /**

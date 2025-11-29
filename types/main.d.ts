@@ -1,7 +1,8 @@
 import { EventEmitter } from 'events';
-import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Room } from 'livekit-client';
+import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
+import type { ConnectionQualityData, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
 export type { AgentState } from './classes/livekit-manager';
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
@@ -21,6 +22,8 @@ type HamsaVoiceAgentConfig = {
     API_URL?: string;
     /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
     LIVEKIT_URL?: string;
+    /** Enable debug logging for troubleshooting. Defaults to false */
+    debug?: boolean;
 };
 /**
  * Configuration options for starting a voice agent conversation
@@ -151,17 +154,9 @@ type HamsaVoiceAgentEvents = {
     /** Emitted when an error occurs */
     error: (error: Error | HamsaApiError) => void;
     /** Emitted when a remote track is subscribed */
-    trackSubscribed: (data: {
-        track: RemoteTrack;
-        publication: RemoteTrackPublication;
-        participant: RemoteParticipant;
-    }) => void;
+    trackSubscribed: (data: TrackSubscriptionData) => void;
     /** Emitted when a remote track is unsubscribed */
-    trackUnsubscribed: (data: {
-        track: RemoteTrack;
-        publication: RemoteTrackPublication;
-        participant: RemoteParticipant;
-    }) => void;
+    trackUnsubscribed: (data: TrackUnsubscriptionData) => void;
     /** Emitted when a local track is published */
     localTrackPublished: (data: {
         track?: LocalTrack;
@@ -170,14 +165,15 @@ type HamsaVoiceAgentEvents = {
     /** Emitted when analytics data is updated */
     analyticsUpdated: (analytics: CallAnalyticsResult) => void;
     /** Emitted when connection quality changes */
-    connectionQualityChanged: (data: {
-        quality: 'excellent' | 'good' | 'poor';
-        metrics: ConnectionStatsResult;
-    }) => void;
+    connectionQualityChanged: (data: ConnectionQualityData) => void;
     /** Emitted when connection state changes */
     connectionStateChanged: (state: ConnectionState) => void;
     /** Emitted when audio playback state changes */
     audioPlaybackChanged: (playing: boolean) => void;
+    /** Emitted when microphone is muted */
+    micMuted: () => void;
+    /** Emitted when microphone is unmuted */
+    micUnmuted: () => void;
     /** Emitted when a participant connects */
     participantConnected: (participant: RemoteParticipant) => void;
     /** Emitted when a participant disconnects */
@@ -310,12 +306,16 @@ declare class HamsaVoiceAgent extends EventEmitter {
     API_URL: string;
     /** LiveKit RTC WebSocket URL */
     LIVEKIT_URL: string;
+    /** Enable debug logging for troubleshooting */
+    debug: boolean;
     /** Job ID for tracking conversation completion status */
     jobId: string | null;
     /** Screen wake lock manager to prevent device sleep during calls */
     wakeLockManager: ScreenWakeLock;
-    /** Flag to track if the user initiated the call end */
+    /** Flag to track if the user initiated the call end to prevent duplicate disconnection logic */
     private userInitiatedEnd;
+    /** Debug logger instance for conditional logging */
+    private readonly logger;
     /**
      * Creates a new HamsaVoiceAgent instance
      *
@@ -338,7 +338,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
      *
      * @throws {Error} If apiKey is not provided or invalid
      */
-    constructor(apiKey: string, { API_URL, LIVEKIT_URL, }?: HamsaVoiceAgentConfig);
+    constructor(apiKey: string, { API_URL, LIVEKIT_URL, debug, }?: HamsaVoiceAgentConfig);
     /**
      * Adjusts the volume level for voice agent audio playback
      *
