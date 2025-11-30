@@ -35,6 +35,9 @@ export function createTestContext(): TestContext {
 
   const liveKitManager = new LiveKitManager(mockUrl, mockToken, mockTools);
 
+  // Manually set the room on audioManager since we don't call connect() in unit tests
+  liveKitManager.audioManager.setRoom(mockRoom as unknown as Room);
+
   return {
     liveKitManager,
     mockRoom,

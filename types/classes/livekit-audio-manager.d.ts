@@ -155,7 +155,7 @@
  */
 import { EventEmitter } from 'events';
 import { type RemoteParticipant, type RemoteTrack, type RemoteTrackPublication, type Room } from 'livekit-client';
-import type { TrackStatsData, TrackStatsResult } from './types';
+import type { AudioCaptureOptions, TrackStatsData, TrackStatsResult } from './types';
 /**
  * LiveKitAudioManager class for comprehensive audio stream management
  *
@@ -176,6 +176,13 @@ export declare class LiveKitAudioManager extends EventEmitter {
     private audioContext;
     private inputAnalyser;
     private outputAnalyser;
+    /** Audio capture state */
+    private audioCaptureEnabled;
+    private audioCaptureOptions;
+    private readonly recorders;
+    private readonly processors;
+    /** Map of track IDs to their capture state */
+    private readonly trackCaptureMap;
     /**
      * Provides the LiveKit Room to the audio manager for microphone control.
      */
@@ -734,5 +741,57 @@ export declare class LiveKitAudioManager extends EventEmitter {
      * audioManager.cleanup(); // Still safe to call
      * ```
      */
+    /**
+     * Enables audio capture with specified options
+     *
+     * This method sets up audio capture from the agent, user, or both, allowing
+     * clients to receive raw audio data for forwarding to third-party services,
+     * recording, or custom processing.
+     *
+     * @param options - Configuration options for audio capture
+     *
+     * @example Capture agent audio in Opus format
+     * ```typescript
+     * audioManager.enableAudioCapture({
+     *   source: 'agent',
+     *   format: 'opus-webm',
+     *   chunkSize: 100,
+     *   callback: (audioData, metadata) => {
+     *     console.log(`Audio from ${metadata.participant}:`, audioData.byteLength, 'bytes');
+     *     sendToThirdParty(audioData);
+     *   }
+     * });
+     * ```
+     *
+     * @example Capture both user and agent in PCM format
+     * ```typescript
+     * audioManager.enableAudioCapture({
+     *   source: 'both',
+     *   format: 'pcm-f32',
+     *   bufferSize: 4096,
+     *   callback: (audioData, metadata) => {
+     *     if (metadata.source === 'agent') {
+     *       processAgentAudio(audioData as Float32Array);
+     *     } else {
+     *       processUserAudio(audioData as Float32Array);
+     *     }
+     *   }
+     * });
+     * ```
+     */
+    enableAudioCapture(options: AudioCaptureOptions): void;
+    /**
+     * Disables audio capture and cleans up all capture resources
+     *
+     * Stops all active MediaRecorders and ScriptProcessorNodes, releases
+     * audio capture resources, and clears capture state.
+     *
+     * @example
+     * ```typescript
+     * // Stop capturing audio
+     * audioManager.disableAudioCapture();
+     * ```
+     */
+    disableAudioCapture(): void;
     cleanup(): void;
 }

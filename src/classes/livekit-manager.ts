@@ -257,6 +257,11 @@ export default class LiveKitManager extends EventEmitter {
         duration: `${connectDuration}ms`,
       },
     });
+
+    // Provide the connected room to the audio manager
+    if (this.connection.room) {
+      this.audioManager.setRoom(this.connection.room);
+    }
   }
 
   /**
