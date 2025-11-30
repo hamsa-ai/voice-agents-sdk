@@ -179,14 +179,10 @@ export declare class LiveKitAudioManager extends EventEmitter {
     /** Audio capture state */
     private audioCaptureEnabled;
     private audioCaptureOptions;
-    private recorders;
-    private processors;
+    private readonly recorders;
+    private readonly processors;
     /** Map of track IDs to their capture state */
-    private trackCaptureMap;
-    /**
-     * Provides the LiveKit Room to the audio manager for microphone control.
-     */
-    constructor();
+    private readonly trackCaptureMap;
     /**
      * Provides the LiveKit Room to the audio manager for microphone control.
      */
