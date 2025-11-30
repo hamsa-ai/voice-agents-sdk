@@ -197,6 +197,205 @@ function createOutputVisualizer() {
 }
 ```
 
+### Audio Capture
+
+Capture raw audio data from the agent or user for forwarding to third-party services, custom recording, or advanced audio processing.
+
+The SDK provides **three levels of API** for different use cases:
+
+#### Level 1: Simple Callback (Recommended for Most Users)
+
+The easiest way - just pass a callback to `start()`:
+
+```javascript
+// Dead simple - captures agent audio automatically
+await agent.start({
+  agentId: 'agent-123',
+  voiceEnablement: true,
+  onAudioData: (audioData) => {
+    // Send to third-party service
+    thirdPartyWebSocket.send(audioData);
+  }
+});
+```
+
+This automatically:
+- ✅ Captures **agent audio** only
+- ✅ Uses **opus-webm** format (efficient, compressed)
+- ✅ Delivers **100ms chunks** (good balance of latency/efficiency)
+- ✅ Starts immediately when call connects
+- ✅ No timing issues or event handling needed
+
+#### Level 2: Inline Configuration
+
+Need more control? Use `captureAudio` options:
+
+```javascript
+await agent.start({
+  agentId: 'agent-123',
+  voiceEnablement: true,
+  captureAudio: {
+    source: 'both',       // Capture both agent and user
+    format: 'pcm-f32',    // Raw PCM for processing
+    bufferSize: 4096,
+    onData: (audioData, metadata) => {
+      if (metadata.source === 'agent') {
+        processAgentAudio(audioData);
+      } else {
+        processUserAudio(audioData);
+      }
+    }
+  }
+});
+```
+
+#### Level 3: Dynamic Control
+
+For advanced users who need runtime control:
+
+```javascript
+// Start without capture
+await agent.start({
+  agentId: 'agent-123',
+  voiceEnablement: true
+});
+
+// Enable capture later, conditionally
+if (userWantsRecording) {
+  agent.enableAudioCapture({
+    source: 'agent',
+    format: 'opus-webm',
+    chunkSize: 100,
+    callback: (audioData, metadata) => {
+      thirdPartyWebSocket.send(audioData);
+    }
+  });
+}
+
+// Disable when done
+agent.disableAudioCapture();
+```
+
+#### Audio Capture Formats
+
+The SDK supports three audio formats:
+
+1. **`opus-webm`** (default, recommended)
+   - Efficient Opus codec in WebM container
+   - Small file size, good quality
+   - Best for forwarding to services or recording
+   - `audioData` is an `ArrayBuffer`
+
+2. **`pcm-f32`**
+   - Raw PCM audio as Float32Array
+   - Values range from -1.0 to 1.0
+   - Best for audio analysis or DSP
+   - `audioData` is a `Float32Array`
+
+3. **`pcm-i16`**
+   - Raw PCM audio as Int16Array
+   - Values range from -32768 to 32767
+   - Best for compatibility with audio APIs
+   - `audioData` is an `Int16Array`
+
+#### Common Use Cases
+
+**Forward agent audio to third-party service:**
+```javascript
+const socket = new WebSocket('wss://your-service.com/audio');
+
+agent.enableAudioCapture({
+  source: 'agent',
+  format: 'opus-webm',
+  chunkSize: 100,
+  callback: (audioData, metadata) => {
+    socket.send(audioData);
+  }
+});
+```
+
+**Capture both agent and user audio:**
+```javascript
+agent.enableAudioCapture({
+  source: 'both',
+  format: 'opus-webm',
+  chunkSize: 100,
+  callback: (audioData, metadata) => {
+    if (metadata.source === 'agent') {
+      processAgentAudio(audioData);
+    } else {
+      processUserAudio(audioData);
+    }
+  }
+});
+```
+
+**Advanced: Custom audio analysis with PCM:**
+```javascript
+agent.enableAudioCapture({
+  source: 'agent',
+  format: 'pcm-f32',
+  bufferSize: 4096,
+  callback: (audioData, metadata) => {
+    const samples = audioData; // Float32Array
+
+    // Calculate RMS volume
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) {
+      sum += samples[i] * samples[i];
+    }
+    const rms = Math.sqrt(sum / samples.length);
+
+    console.log('Agent voice level:', rms);
+
+    // Apply custom DSP, analyze frequencies, etc.
+    customAudioProcessor.process(samples, metadata.sampleRate);
+  }
+});
+```
+
+**Real-time transcription:**
+```javascript
+const transcriptionWS = new WebSocket('wss://transcription-service.com');
+
+agent.enableAudioCapture({
+  source: 'user',
+  format: 'opus-webm',
+  chunkSize: 50, // Lower latency
+  callback: (audioData, metadata) => {
+    transcriptionWS.send(JSON.stringify({
+      audio: Array.from(new Uint8Array(audioData)),
+      timestamp: metadata.timestamp,
+      participant: metadata.participant
+    }));
+  }
+});
+```
+
+**TypeScript support:**
+```typescript
+import { AudioCaptureOptions, AudioCaptureMetadata } from '@hamsa-ai/voice-agents-sdk';
+
+const options: AudioCaptureOptions = {
+  source: 'agent',
+  format: 'pcm-f32',
+  bufferSize: 4096,
+  callback: (audioData: Float32Array | Int16Array | ArrayBuffer, metadata: AudioCaptureMetadata) => {
+    console.log('Audio captured:', {
+      participant: metadata.participant,
+      source: metadata.source,        // 'agent' | 'user'
+      trackId: metadata.trackId,
+      timestamp: metadata.timestamp,
+      sampleRate: metadata.sampleRate,  // For PCM formats
+      channels: metadata.channels,      // For PCM formats
+      format: metadata.format
+    });
+  }
+};
+
+agent.enableAudioCapture(options);
+```
+
 
 ## Advanced Configuration Options
 
@@ -586,6 +785,8 @@ The SDK includes comprehensive TypeScript definitions with detailed analytics in
 import {
   HamsaVoiceAgent,
   AgentState,
+  AudioCaptureOptions,
+  AudioCaptureMetadata,
   CallAnalyticsResult,
   ParticipantData,
   CustomEventMetadata,
@@ -608,6 +809,21 @@ const inputVolume = agent.getInputVolume(); // number
 const isMuted = agent.isMicMuted(); // boolean
 const inputFreqData = agent.getInputByteFrequencyData(); // Uint8Array
 const outputFreqData = agent.getOutputByteFrequencyData(); // Uint8Array
+
+// Audio capture with full type safety
+agent.enableAudioCapture({
+  source: 'agent',
+  format: 'opus-webm',
+  chunkSize: 100,
+  callback: (audioData: ArrayBuffer | Float32Array | Int16Array, metadata: AudioCaptureMetadata) => {
+    // Full TypeScript autocomplete for metadata
+    console.log(metadata.participant); // string
+    console.log(metadata.source);      // 'agent' | 'user'
+    console.log(metadata.timestamp);   // number
+    console.log(metadata.trackId);     // string
+    console.log(metadata.sampleRate);  // number | undefined
+  }
+});
 
 // Strongly typed start options with all advanced features
 await agent.start({

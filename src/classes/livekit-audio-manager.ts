@@ -156,6 +156,7 @@
 
 import { EventEmitter } from 'events';
 import {
+  type LocalTrack,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
@@ -163,6 +164,9 @@ import {
   Track,
 } from 'livekit-client';
 import type {
+  AudioCaptureFormat,
+  AudioCaptureMetadata,
+  AudioCaptureOptions,
   MinimalAnalyser,
   MinimalAudioContext,
   MinimalAudioNode,
@@ -184,6 +188,22 @@ const ANALYSER_FFT_SIZE = 256;
 /** Max byte value for frequency bins */
 const BYTE_MAX = 255;
 
+// Audio capture configuration constants
+/** Default chunk size for encoded audio capture (milliseconds) */
+const DEFAULT_CHUNK_SIZE = 100;
+/** Default buffer size for PCM audio capture (samples) */
+const DEFAULT_BUFFER_SIZE = 4096;
+/** Default audio capture format */
+const DEFAULT_AUDIO_FORMAT: AudioCaptureFormat = 'opus-webm';
+
+// PCM conversion constants
+/** Minimum value for 16-bit signed integer */
+const INT16_MIN = -32_768;
+/** Maximum value for 16-bit signed integer */
+const INT16_MAX = 32_767;
+/** Scale factor for converting float32 to int16 */
+const INT16_SCALE = 32_768;
+
 /**
  * LiveKitAudioManager class for comprehensive audio stream management
  *
@@ -204,12 +224,22 @@ export class LiveKitAudioManager extends EventEmitter {
   private room: Room | null = null;
 
   /** Optional WebAudio context and analysers (reserved for future use) */
-  // biome-ignore lint/style/useReadonlyClassProperties: These are reassigned during analyser initialization
   private audioContext: MinimalAudioContext | null = null;
   // biome-ignore lint/style/useReadonlyClassProperties: These are reassigned during analyser initialization
   private inputAnalyser: MinimalAnalyser | null = null;
   // biome-ignore lint/style/useReadonlyClassProperties: These are reassigned during analyser initialization
   private outputAnalyser: MinimalAnalyser | null = null;
+
+  /** Audio capture state */
+  private audioCaptureEnabled = false;
+  private audioCaptureOptions: AudioCaptureOptions | null = null;
+  private readonly recorders: Map<string, MediaRecorder> = new Map();
+  private readonly processors: Map<string, ScriptProcessorNode> = new Map();
+  /** Map of track IDs to their capture state */
+  private readonly trackCaptureMap: Map<
+    string,
+    { participant: string; source: 'agent' | 'user' }
+  > = new Map();
 
   /**
    * Provides the LiveKit Room to the audio manager for microphone control.
@@ -683,55 +713,118 @@ export class LiveKitAudioManager extends EventEmitter {
     participant: RemoteParticipant
   ): void {
     if (track.kind === Track.Kind.Audio) {
-      // Track analytics data with native LiveKit information
-      this.trackStats.set(
-        track.sid || track.mediaStreamTrack?.id || 'unknown',
-        {
-          trackId: track.sid || track.mediaStreamTrack?.id || 'unknown',
-          kind: track.kind,
-          participant: participant.identity || 'unknown',
-          subscriptionTime: Date.now(),
-          publication,
-          // Use native LiveKit track source information
-          source: this.#getTrackSourceString(publication.source),
-          muted: publication.isMuted,
-          enabled: publication.isEnabled,
-          dimensions: publication.dimensions,
-          simulcasted: publication.simulcasted,
-        }
+      this.#recordTrackStats(track, publication, participant);
+      this.#setupAudioElement(track, publication, participant);
+    }
+  }
+
+  /**
+   * Records track statistics for analytics
+   * @private
+   */
+  #recordTrackStats(
+    track: RemoteTrack,
+    publication: RemoteTrackPublication,
+    participant: RemoteParticipant
+  ): void {
+    this.trackStats.set(track.sid || track.mediaStreamTrack?.id || 'unknown', {
+      trackId: track.sid || track.mediaStreamTrack?.id || 'unknown',
+      kind: track.kind,
+      participant: participant.identity || 'unknown',
+      subscriptionTime: Date.now(),
+      publication,
+      source: this.#getTrackSourceString(publication.source),
+      muted: publication.isMuted,
+      enabled: publication.isEnabled,
+      dimensions: publication.dimensions,
+      simulcasted: publication.simulcasted,
+    });
+  }
+
+  /**
+   * Sets up audio element for playback and monitoring
+   * @private
+   */
+  #setupAudioElement(
+    track: RemoteTrack,
+    publication: RemoteTrackPublication,
+    participant: RemoteParticipant
+  ): void {
+    const audioElement = track.attach() as HTMLAudioElement;
+    if (!audioElement) {
+      return;
+    }
+
+    audioElement.volume = this.volume;
+    audioElement.autoplay = true;
+
+    this.#setupAudioMonitoring(audioElement);
+    this.audioElements.add(audioElement);
+
+    this.#emitTrackSubscribed(track, publication, participant);
+    this.#attachAudioElementToDOM(audioElement);
+    this.#setupAudioCaptureIfEnabled(track, participant);
+  }
+
+  /**
+   * Emits track subscription event
+   * @private
+   */
+  #emitTrackSubscribed(
+    track: RemoteTrack,
+    publication: RemoteTrackPublication,
+    participant: RemoteParticipant
+  ): void {
+    const subscriptionData: TrackSubscriptionData = {
+      track,
+      publication,
+      participant: participant.identity || 'unknown',
+      trackStats: this.trackStats.get(
+        track.sid || track.mediaStreamTrack?.id || 'unknown'
+      ),
+    };
+    this.emit('trackSubscribed', subscriptionData);
+  }
+
+  /**
+   * Attaches audio element to DOM for playback
+   * @private
+   */
+  #attachAudioElementToDOM(audioElement: HTMLAudioElement): void {
+    audioElement.style.display = 'none';
+    try {
+      document.body.appendChild(audioElement);
+    } catch {
+      // Ignore DOM attachment errors
+    }
+  }
+
+  /**
+   * Sets up audio capture if enabled for this track
+   * @private
+   */
+  #setupAudioCaptureIfEnabled(
+    track: RemoteTrack,
+    participant: RemoteParticipant
+  ): void {
+    if (!(this.audioCaptureEnabled && this.audioCaptureOptions)) {
+      return;
+    }
+
+    const trackId = track.sid || track.mediaStreamTrack?.id || 'unknown';
+    const isAgent = (participant.identity || '')
+      .toLowerCase()
+      .includes('agent');
+    const trackSource: 'agent' | 'user' = isAgent ? 'agent' : 'user';
+    const { source, format } = this.audioCaptureOptions;
+
+    if ((source === 'both' || source === trackSource) && format) {
+      this.#setupTrackCapture(
+        trackId,
+        participant.identity || 'unknown',
+        trackSource,
+        format
       );
-
-      // Attach the audio track to an HTML audio element
-      const audioElement = track.attach() as HTMLAudioElement;
-      if (audioElement) {
-        audioElement.volume = this.volume;
-        audioElement.autoplay = true;
-
-        // Set up audio monitoring
-        this.#setupAudioMonitoring(audioElement);
-
-        // Store reference to audio element
-        this.audioElements.add(audioElement);
-
-        // Emit track subscription event
-        const subscriptionData: TrackSubscriptionData = {
-          track,
-          publication,
-          participant: participant.identity || 'unknown',
-          trackStats: this.trackStats.get(
-            track.sid || track.mediaStreamTrack?.id || 'unknown'
-          ),
-        };
-        this.emit('trackSubscribed', subscriptionData);
-
-        // Append to document body (hidden) to enable playback
-        audioElement.style.display = 'none';
-        try {
-          document.body.appendChild(audioElement);
-        } catch {
-          // Ignore DOM attachment errors
-        }
-      }
     }
   }
 
@@ -1271,7 +1364,370 @@ export class LiveKitAudioManager extends EventEmitter {
    * audioManager.cleanup(); // Still safe to call
    * ```
    */
+  /**
+   * Enables audio capture with specified options
+   *
+   * This method sets up audio capture from the agent, user, or both, allowing
+   * clients to receive raw audio data for forwarding to third-party services,
+   * recording, or custom processing.
+   *
+   * @param options - Configuration options for audio capture
+   *
+   * @example Capture agent audio in Opus format
+   * ```typescript
+   * audioManager.enableAudioCapture({
+   *   source: 'agent',
+   *   format: 'opus-webm',
+   *   chunkSize: 100,
+   *   callback: (audioData, metadata) => {
+   *     console.log(`Audio from ${metadata.participant}:`, audioData.byteLength, 'bytes');
+   *     sendToThirdParty(audioData);
+   *   }
+   * });
+   * ```
+   *
+   * @example Capture both user and agent in PCM format
+   * ```typescript
+   * audioManager.enableAudioCapture({
+   *   source: 'both',
+   *   format: 'pcm-f32',
+   *   bufferSize: 4096,
+   *   callback: (audioData, metadata) => {
+   *     if (metadata.source === 'agent') {
+   *       processAgentAudio(audioData as Float32Array);
+   *     } else {
+   *       processUserAudio(audioData as Float32Array);
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  enableAudioCapture(options: AudioCaptureOptions): void {
+    // Support both 'callback' and 'onData' for flexibility
+    const callback = options.callback || options.onData;
+
+    if (!callback) {
+      throw new Error(
+        'Audio capture requires either "callback" or "onData" option'
+      );
+    }
+
+    this.audioCaptureEnabled = true;
+    this.audioCaptureOptions = {
+      source: options.source || 'agent',
+      format: options.format || DEFAULT_AUDIO_FORMAT,
+      chunkSize: options.chunkSize || DEFAULT_CHUNK_SIZE,
+      bufferSize: options.bufferSize || DEFAULT_BUFFER_SIZE,
+      callback,
+    };
+
+    // Set up capture for existing tracks
+    this.#setupExistingTrackCapture();
+  }
+
+  /**
+   * Disables audio capture and cleans up all capture resources
+   *
+   * Stops all active MediaRecorders and ScriptProcessorNodes, releases
+   * audio capture resources, and clears capture state.
+   *
+   * @example
+   * ```typescript
+   * // Stop capturing audio
+   * audioManager.disableAudioCapture();
+   * ```
+   */
+  disableAudioCapture(): void {
+    this.audioCaptureEnabled = false;
+    this.#cleanupAudioCapture();
+    this.audioCaptureOptions = null;
+  }
+
+  /**
+   * Sets up audio capture for existing tracks
+   * @private
+   */
+  #setupExistingTrackCapture(): void {
+    if (!this.audioCaptureOptions) {
+      return;
+    }
+
+    const { source, format } = this.audioCaptureOptions;
+
+    if (!format) {
+      return;
+    }
+
+    // Set up capture for already-subscribed tracks
+    for (const [trackId, trackData] of this.trackStats.entries()) {
+      const isAgent = trackData.participant.toLowerCase().includes('agent');
+      const trackSource: 'agent' | 'user' = isAgent ? 'agent' : 'user';
+
+      // Check if we should capture this track
+      if (source === 'both' || source === trackSource) {
+        this.#setupTrackCapture(
+          trackId,
+          trackData.participant,
+          trackSource,
+          format
+        );
+      }
+    }
+  }
+
+  /**
+   * Sets up audio capture for a specific track
+   * @private
+   */
+  #setupTrackCapture(
+    trackId: string,
+    participant: string,
+    source: 'agent' | 'user',
+    format: AudioCaptureFormat
+  ): void {
+    if (!this.audioCaptureOptions) {
+      return;
+    }
+
+    // Get the track from LiveKit room
+    const track = this.#getTrackById(trackId);
+    if (!track?.mediaStreamTrack) {
+      return;
+    }
+
+    // Store capture metadata
+    this.trackCaptureMap.set(trackId, { participant, source });
+
+    const stream = new MediaStream([track.mediaStreamTrack]);
+
+    if (format === 'opus-webm') {
+      this.#setupEncodedCapture(stream, trackId, participant, source);
+    } else {
+      this.#setupPCMCapture({ stream, trackId, participant, source, format });
+    }
+  }
+
+  /**
+   * Sets up encoded audio capture using MediaRecorder
+   * @private
+   */
+  #setupEncodedCapture(
+    stream: MediaStream,
+    trackId: string,
+    participant: string,
+    source: 'agent' | 'user'
+  ): void {
+    if (!this.audioCaptureOptions?.callback) {
+      return;
+    }
+
+    const { chunkSize, callback } = this.audioCaptureOptions;
+
+    try {
+      const mimeType = this.#getSupportedMimeType();
+      const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
+
+      const recorder = new MediaRecorder(stream, options);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          event.data.arrayBuffer().then((buffer) => {
+            const metadata: AudioCaptureMetadata = {
+              participant,
+              source,
+              timestamp: Date.now(),
+              trackId,
+              format: 'opus-webm',
+            };
+            callback(buffer, metadata);
+          });
+        }
+      };
+
+      recorder.start(chunkSize);
+
+      // Store recorder reference
+      this.recorders.set(trackId, recorder);
+    } catch (error) {
+      this.emit(
+        'error',
+        new Error(
+          `Failed to setup encoded audio capture: ${error instanceof Error ? error.message : String(error)}`
+        )
+      );
+    }
+  }
+
+  /**
+   * Sets up PCM audio capture using Web Audio API
+   * @private
+   */
+  #setupPCMCapture(options: {
+    stream: MediaStream;
+    trackId: string;
+    participant: string;
+    source: 'agent' | 'user';
+    format: AudioCaptureFormat;
+  }): void {
+    const { stream, trackId, participant, source, format } = options;
+
+    if (!this.audioCaptureOptions?.callback) {
+      return;
+    }
+
+    const { bufferSize, callback } = this.audioCaptureOptions;
+
+    try {
+      // Create AudioContext if needed
+      if (!this.audioContext) {
+        this.audioContext =
+          new AudioContext() as unknown as MinimalAudioContext;
+      }
+
+      const audioContext = this.audioContext as unknown as AudioContext;
+
+      // Resume AudioContext if suspended (browser autoplay policy)
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => {
+          // Ignore resume errors, will try again on next user interaction if possible
+          // or fail silently if policy is strict
+        });
+      }
+      const sourceNode = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        const inputBuffer = e.inputBuffer;
+        const audioData = inputBuffer.getChannelData(0);
+
+        let outputData: Float32Array | Int16Array = audioData;
+
+        // Convert to Int16 if requested
+        if (format === 'pcm-i16') {
+          const int16Array = new Int16Array(audioData.length);
+          for (let i = 0; i < audioData.length; i++) {
+            int16Array[i] = Math.max(
+              INT16_MIN,
+              Math.min(INT16_MAX, audioData[i] * INT16_SCALE)
+            );
+          }
+          outputData = int16Array;
+        }
+
+        const metadata: AudioCaptureMetadata = {
+          participant,
+          source,
+          timestamp: Date.now(),
+          trackId,
+          format,
+          sampleRate: inputBuffer.sampleRate,
+          channels: inputBuffer.numberOfChannels,
+        };
+
+        callback(outputData, metadata);
+      };
+
+      sourceNode.connect(processor);
+      processor.connect(audioContext.destination);
+
+      // Store processor reference
+      this.processors.set(trackId, processor as unknown as ScriptProcessorNode);
+    } catch (error) {
+      this.emit(
+        'error',
+        new Error(
+          `Failed to setup PCM audio capture: ${error instanceof Error ? error.message : String(error)}`
+        )
+      );
+    }
+  }
+
+  /**
+   * Gets a track by its ID
+   * @private
+   */
+  #getTrackById(trackId: string): RemoteTrack | LocalTrack | null {
+    if (!this.room) {
+      return null;
+    }
+
+    // Check remote tracks
+    for (const participant of Array.from(
+      this.room.remoteParticipants.values()
+    )) {
+      // Iterate all publications and check track SID or mediaStreamTrack ID
+      for (const pub of Array.from(participant.trackPublications.values())) {
+        if (
+          pub.track?.sid === trackId ||
+          pub.track?.mediaStreamTrack?.id === trackId
+        ) {
+          return pub.track;
+        }
+      }
+    }
+
+    // Check local tracks
+    if (this.room.localParticipant) {
+      // Iterate all publications and check track SID or mediaStreamTrack ID
+      for (const publication of Array.from(
+        this.room.localParticipant.trackPublications.values()
+      )) {
+        if (
+          publication.track?.sid === trackId ||
+          publication.track?.mediaStreamTrack?.id === trackId
+        ) {
+          return publication.track;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Cleans up all audio capture resources
+   * @private
+   */
+  #cleanupAudioCapture(): void {
+    // Stop and clean up MediaRecorders
+    for (const recorder of this.recorders.values()) {
+      try {
+        recorder.stop();
+      } catch {
+        // Ignore errors
+      }
+    }
+    this.recorders.clear();
+
+    // Disconnect and clean up ScriptProcessorNodes
+    for (const processor of this.processors.values()) {
+      try {
+        processor.disconnect();
+      } catch {
+        // Ignore errors
+      }
+    }
+    this.processors.clear();
+
+    // Clear track capture map
+    this.trackCaptureMap.clear();
+
+    // Close AudioContext to release hardware resources
+    if (this.audioContext) {
+      const ctx = this.audioContext as unknown as AudioContext;
+      if (ctx.state !== 'closed') {
+        ctx.close().catch(() => {
+          // Ignore errors
+        });
+      }
+      this.audioContext = null;
+    }
+  }
+
   cleanup(): void {
+    // Clean up audio capture resources
+    this.#cleanupAudioCapture();
+
     // Remove all audio elements
     for (const audioElement of this.audioElements) {
       try {
@@ -1286,5 +1742,27 @@ export class LiveKitAudioManager extends EventEmitter {
 
     // Clear track data
     this.trackStats.clear();
+  }
+
+  /**
+   * Detects the supported audio MIME type for MediaRecorder
+   * @private
+   */
+  #getSupportedMimeType(): string {
+    const types = [
+      'audio/webm;codecs=opus', // Preferred (Chrome, Firefox)
+      'audio/mp4', // Safari
+      'audio/aac', // Safari fallback
+      'audio/webm', // Generic WebM
+      'audio/ogg', // Older Firefox
+    ];
+
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
+    }
+
+    return ''; // Let browser choose default
   }
 }

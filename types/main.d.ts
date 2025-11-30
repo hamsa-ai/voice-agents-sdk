@@ -2,8 +2,9 @@ import { EventEmitter } from 'events';
 import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
-import type { ConnectionQualityData, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
+import type { AudioCaptureCallback, AudioCaptureOptions, ConnectionQualityData, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
 export type { AgentState } from './classes/livekit-manager';
+export type { AudioCaptureCallback, AudioCaptureFormat, AudioCaptureMetadata, AudioCaptureOptions, AudioCaptureSource, } from './classes/types';
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
  * for internationalization and programmatic error handling
@@ -60,6 +61,32 @@ type StartOptions = {
     connectionDelay?: ConnectionDelays;
     /** Disable wake lock to allow device sleep during conversation */
     disableWakeLock?: boolean;
+    /**
+     * Simple callback to receive agent audio data (Level 1 API - Simplest)
+     * Automatically captures agent audio in opus-webm format with 100ms chunks
+     * @example
+     * ```typescript
+     * onAudioData: (audioData) => {
+     *   thirdPartySocket.send(audioData);
+     * }
+     * ```
+     */
+    onAudioData?: AudioCaptureCallback;
+    /**
+     * Advanced audio capture configuration (Level 2 API - More Control)
+     * Use this if you need to specify format, source, or other options
+     * @example
+     * ```typescript
+     * captureAudio: {
+     *   source: 'both',
+     *   format: 'pcm-f32',
+     *   onData: (audioData, metadata) => {
+     *     processAudio(audioData, metadata);
+     *   }
+     * }
+     * ```
+     */
+    captureAudio?: AudioCaptureOptions;
 };
 /**
  * Definition of a client-side tool that can be called by the voice agent
@@ -524,6 +551,131 @@ declare class HamsaVoiceAgent extends EventEmitter {
      */
     getOutputByteFrequencyData(): Uint8Array;
     /**
+     * Enables real-time audio capture from the conversation
+     *
+     * This method allows clients to receive raw audio data from the agent, user, or both,
+     * enabling use cases like forwarding audio to third-party services, custom recording,
+     * real-time transcription, or audio analysis.
+     *
+     * The audio can be captured in three formats:
+     * - `opus-webm`: Efficient Opus codec in WebM container (default, recommended)
+     * - `pcm-f32`: Raw PCM audio as Float32Array for advanced processing
+     * - `pcm-i16`: Raw PCM audio as Int16Array for compatibility
+     *
+     * @param options - Configuration options for audio capture
+     * @param options.source - Which audio to capture: 'agent' (default), 'user', or 'both'
+     * @param options.format - Audio format to receive (default: 'opus-webm')
+     * @param options.chunkSize - Chunk size in milliseconds for encoded formats (default: 100ms)
+     * @param options.bufferSize - Buffer size in samples for PCM formats (default: 4096)
+     * @param options.callback - Function called with each audio chunk
+     *
+     * @example Forward agent audio to third-party service
+     * ```typescript
+     * // Start capturing agent audio when call begins
+     * agent.on('callStarted', () => {
+     *   agent.enableAudioCapture({
+     *     source: 'agent',
+     *     format: 'opus-webm',
+     *     chunkSize: 100, // 100ms chunks
+     *     callback: (audioData, metadata) => {
+     *       console.log(`Audio from ${metadata.participant}: ${audioData.byteLength} bytes`);
+     *
+     *       // Send to third-party service via WebSocket
+     *       thirdPartyWebSocket.send(audioData);
+     *
+     *       // Or via HTTP
+     *       fetch('https://api.example.com/audio', {
+     *         method: 'POST',
+     *         body: audioData,
+     *         headers: {
+     *           'Content-Type': 'audio/webm',
+     *           'X-Participant': metadata.participant,
+     *           'X-Timestamp': metadata.timestamp.toString()
+     *         }
+     *       });
+     *     }
+     *   });
+     * });
+     * ```
+     *
+     * @example Capture both agent and user for custom processing
+     * ```typescript
+     * agent.enableAudioCapture({
+     *   source: 'both',
+     *   format: 'pcm-f32',
+     *   bufferSize: 4096,
+     *   callback: (audioData, metadata) => {
+     *     const samples = audioData as Float32Array;
+     *
+     *     if (metadata.source === 'agent') {
+     *       // Process agent audio
+     *       analyzeAgentVoice(samples, metadata.sampleRate);
+     *     } else {
+     *       // Process user audio
+     *       analyzeUserVoice(samples, metadata.sampleRate);
+     *     }
+     *
+     *     // Save to custom recorder
+     *     customRecorder.addAudioChunk({
+     *       source: metadata.source,
+     *       samples,
+     *       sampleRate: metadata.sampleRate,
+     *       timestamp: metadata.timestamp
+     *     });
+     *   }
+     * });
+     * ```
+     *
+     * @example Real-time transcription integration
+     * ```typescript
+     * import { AudioCaptureOptions } from '@hamsa-ai/voice-agents-sdk';
+     *
+     * const transcriptionService = new WebSocket('wss://transcription.example.com');
+     *
+     * agent.enableAudioCapture({
+     *   source: 'user',
+     *   format: 'opus-webm',
+     *   chunkSize: 50, // Lower latency for real-time transcription
+     *   callback: (audioData, metadata) => {
+     *     // Forward user audio to transcription service
+     *     transcriptionService.send(JSON.stringify({
+     *       audio: Array.from(new Uint8Array(audioData as ArrayBuffer)),
+     *       timestamp: metadata.timestamp,
+     *       sampleRate: metadata.sampleRate
+     *     }));
+     *   }
+     * });
+     *
+     * transcriptionService.onmessage = (event) => {
+     *   const transcription = JSON.parse(event.data);
+     *   console.log('Real-time transcription:', transcription.text);
+     *   displayUserSpeech(transcription.text);
+     * };
+     * ```
+     */
+    enableAudioCapture(options: AudioCaptureOptions): void;
+    /**
+     * Disables audio capture and releases all capture resources
+     *
+     * Stops all active audio capture, cleans up MediaRecorders and audio processors,
+     * and releases associated resources. Safe to call even if audio capture is not enabled.
+     *
+     * @example
+     * ```typescript
+     * // Stop capturing when call ends
+     * agent.on('callEnded', () => {
+     *   agent.disableAudioCapture();
+     *   console.log('Audio capture stopped');
+     * });
+     *
+     * // Or stop manually
+     * stopCaptureButton.addEventListener('click', () => {
+     *   agent.disableAudioCapture();
+     * });
+     * ```
+     */
+    disableAudioCapture(): void;
+    /**
      * Initiates a new voice agent conversation
      *
      * This is the primary method for starting interactions with a voice agent.
@@ -595,7 +747,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * await agent.start({ agentId: 'my_agent', voiceEnablement: true });
      * ```
      */
-    start({ agentId, params, voiceEnablement, tools, userId: _userId, preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices, connectionDelay: _connectionDelay, disableWakeLock: _disableWakeLock, }: StartOptions): Promise<void>;
+    start({ agentId, params, voiceEnablement, tools, userId: _userId, preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices, connectionDelay: _connectionDelay, disableWakeLock: _disableWakeLock, onAudioData, captureAudio, }: StartOptions): Promise<void>;
     /**
      * Terminates the current voice agent conversation
      *

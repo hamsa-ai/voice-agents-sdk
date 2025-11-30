@@ -317,6 +317,54 @@ export type CustomEventMetadata = {
     rawMessage: Record<string, unknown>;
 };
 /**
+ * Audio format types supported for audio capture
+ */
+export type AudioCaptureFormat = 'opus-webm' | 'pcm-f32' | 'pcm-i16';
+/**
+ * Source of audio to capture
+ */
+export type AudioCaptureSource = 'agent' | 'user' | 'both';
+/**
+ * Metadata provided with each audio data chunk
+ */
+export type AudioCaptureMetadata = {
+    /** Identity of the participant this audio is from */
+    participant: string;
+    /** Type of participant ('agent' or 'user') */
+    source: 'agent' | 'user';
+    /** Unix timestamp when this audio chunk was captured */
+    timestamp: number;
+    /** Track ID associated with this audio */
+    trackId: string;
+    /** Audio format of this chunk */
+    format: AudioCaptureFormat;
+    /** Sample rate in Hz (for PCM formats) */
+    sampleRate?: number;
+    /** Number of channels (typically 1 for mono) */
+    channels?: number;
+};
+/**
+ * Callback function type for audio data capture
+ */
+export type AudioCaptureCallback = (audioData: ArrayBuffer | Float32Array | Int16Array, metadata: AudioCaptureMetadata) => void;
+/**
+ * Options for configuring audio capture
+ */
+export type AudioCaptureOptions = {
+    /** Source of audio to capture (default: 'agent') */
+    source?: AudioCaptureSource;
+    /** Audio format to deliver (default: 'opus-webm') */
+    format?: AudioCaptureFormat;
+    /** Chunk size in milliseconds for encoded formats (default: 100ms) */
+    chunkSize?: number;
+    /** Buffer size for PCM formats in samples (default: 4096) */
+    bufferSize?: number;
+    /** Callback function to receive audio data (Level 3 API - Full control) */
+    callback?: AudioCaptureCallback;
+    /** Simpler callback alias (Level 2 API - recommended for inline usage) */
+    onData?: AudioCaptureCallback;
+};
+/**
  * LiveKit access token payload structure used by Hamsa backend.
  * Represents the decoded JWT payload fields relevant for SDK logic.
  */

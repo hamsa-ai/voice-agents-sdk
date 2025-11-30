@@ -18,10 +18,12 @@ export type MockRoom = {
   };
   on: jest.Mock;
   name: string;
+  remoteParticipants: Map<string, any>;
 };
 
 export type MockTrack = {
   kind: string;
+  sid?: string;
   attach?: jest.Mock;
   detach?: jest.Mock;
   mediaStreamTrack?: any;
@@ -47,6 +49,7 @@ export function createMockRoom(): MockRoom {
     },
     on: jest.fn().mockReturnThis(),
     name: 'test-room',
+    remoteParticipants: new Map(),
   };
 }
 
@@ -71,11 +74,14 @@ export function extractEventHandler(
  * @returns Mock audio track object
  */
 export function createMockAudioTrack(): MockTrack {
+  const mockMediaStreamTrack = new MediaStreamTrack();
   return {
     kind: Track.Kind.Audio,
+    // biome-ignore lint/style/noMagicNumbers: Random ID generation for test mocks
+    sid: `track-${Math.random().toString(36).substring(7)}`,
     attach: jest.fn().mockReturnValue(new HTMLAudioElement()),
     detach: jest.fn().mockReturnValue([new HTMLAudioElement()]),
-    mediaStreamTrack: new MediaStreamTrack(),
+    mediaStreamTrack: mockMediaStreamTrack,
   };
 }
 
@@ -153,6 +159,7 @@ export function createMockRoomWithErrors(): MockRoom {
     },
     on: jest.fn().mockReturnThis(),
     name: 'error-room',
+    remoteParticipants: new Map(),
   };
 }
 
