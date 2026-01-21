@@ -190,6 +190,8 @@ type HamsaVoiceAgentEvents = {
     listening: () => void;
     /** Emitted when agent state changes (idle, initializing, listening, thinking, speaking) */
     agentStateChanged: (state: AgentState) => void;
+    /** Emitted when a DTMF digit is successfully sent */
+    dtmfSent: (digit: DTMFDigit) => void;
     /** Emitted when an error occurs */
     error: (error: Error | HamsaApiError) => void;
     /** Emitted when a remote track is subscribed */
@@ -564,11 +566,18 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * @param digit - A single DTMF digit: '0'-'9', '*', or '#'
      * @throws {Error} If called when not connected (no active call)
      * @throws {Error} If the digit is not a valid DTMF character
+     * @fires dtmfSent When a DTMF digit is successfully sent to the agent
      *
      * @example Basic usage
      * ```typescript
      * const agent = new HamsaVoiceAgent(apiKey, config);
      * await agent.start({ agentId, params });
+     *
+     * // Listen for DTMF send confirmations
+     * agent.on('dtmfSent', (digit) => {
+     *   console.log(`Sent DTMF digit: ${digit}`);
+     *   highlightKeypadButton(digit);
+     * });
      *
      * // Later, when user presses a key on the UI keypad:
      * agent.sendDTMF('1');  // Simulates pressing "1"
