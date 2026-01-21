@@ -2,9 +2,9 @@ import { EventEmitter } from 'events';
 import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
-import type { AudioCaptureCallback, AudioCaptureOptions, ConnectionQualityData, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
+import type { AudioCaptureCallback, AudioCaptureOptions, ConnectionQualityData, DTMFDigit, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
 export type { AgentState } from './classes/livekit-manager';
-export type { AudioCaptureCallback, AudioCaptureFormat, AudioCaptureMetadata, AudioCaptureOptions, AudioCaptureSource, } from './classes/types';
+export type { AudioCaptureCallback, AudioCaptureFormat, AudioCaptureMetadata, AudioCaptureOptions, AudioCaptureSource, DTMFDigit, } from './classes/types';
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
  * for internationalization and programmatic error handling
@@ -550,6 +550,66 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * ```
      */
     sendContextualUpdate(context: string): void;
+    /**
+     * Sends a DTMF (Dual-Tone Multi-Frequency) digit to the voice agent
+     *
+     * Simulates pressing a key on a phone keypad during the call. This enables
+     * browser-based call testing with DTMF input simulation, allowing users to
+     * test IVR flows and DTMF transitions without making actual phone calls.
+     *
+     * The DTMF digit is sent through the LiveKit data channel to the server,
+     * which processes it as a DTMF input event that can trigger DTMF transitions
+     * in the agent flow.
+     *
+     * @param digit - A single DTMF digit: '0'-'9', '*', or '#'
+     * @throws {Error} If called when not connected (no active call)
+     * @throws {Error} If the digit is not a valid DTMF character
+     *
+     * @example Basic usage
+     * ```typescript
+     * const agent = new HamsaVoiceAgent(apiKey, config);
+     * await agent.start({ agentId, params });
+     *
+     * // Later, when user presses a key on the UI keypad:
+     * agent.sendDTMF('1');  // Simulates pressing "1"
+     * agent.sendDTMF('*');  // Simulates pressing "*"
+     * agent.sendDTMF('#');  // Simulates pressing "#"
+     * ```
+     *
+     * @example With UI keypad
+     * ```typescript
+     * // Create keypad buttons
+     * const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+     *
+     * digits.forEach(digit => {
+     *   const button = document.createElement('button');
+     *   button.textContent = digit;
+     *   button.onclick = () => {
+     *     try {
+     *       agent.sendDTMF(digit);
+     *       playKeyTone(digit); // Optional: play local tone feedback
+     *     } catch (error) {
+     *       console.error('Failed to send DTMF:', error.message);
+     *     }
+     *   };
+     *   keypadContainer.appendChild(button);
+     * });
+     * ```
+     *
+     * @example Error handling
+     * ```typescript
+     * try {
+     *   agent.sendDTMF('1');
+     * } catch (error) {
+     *   if (error.message.includes('not connected')) {
+     *     showConnectionError();
+     *   } else if (error.message.includes('Invalid DTMF')) {
+     *     showInvalidInputError();
+     *   }
+     * }
+     * ```
+     */
+    sendDTMF(digit: DTMFDigit): void;
     /**
      * Gets frequency data from the user's microphone input
      *

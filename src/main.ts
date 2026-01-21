@@ -23,6 +23,7 @@ import type {
   AudioCaptureCallback,
   AudioCaptureOptions,
   ConnectionQualityData,
+  DTMFDigit,
   LiveKitTokenPayload,
   TrackSubscriptionData,
   TrackUnsubscriptionData,
@@ -37,6 +38,7 @@ export type {
   AudioCaptureMetadata,
   AudioCaptureOptions,
   AudioCaptureSource,
+  DTMFDigit,
 } from './classes/types';
 
 /**
@@ -265,6 +267,8 @@ type HamsaVoiceAgentEvents = {
   listening: () => void;
   /** Emitted when agent state changes (idle, initializing, listening, thinking, speaking) */
   agentStateChanged: (state: AgentState) => void;
+  /** Emitted when a DTMF digit is successfully sent */
+  dtmfSent: (digit: DTMFDigit) => void;
 
   // Error events
   /** Emitted when an error occurs */
@@ -717,6 +721,137 @@ class HamsaVoiceAgent extends EventEmitter {
       });
       // This could be implemented as a special non-conversational message
     }
+  }
+
+  /**
+   * Sends a DTMF (Dual-Tone Multi-Frequency) digit to the voice agent
+   *
+   * Simulates pressing a key on a phone keypad during the call. This enables
+   * browser-based call testing with DTMF input simulation, allowing users to
+   * test IVR flows and DTMF transitions without making actual phone calls.
+   *
+   * The DTMF digit is sent through the LiveKit data channel to the server,
+   * which processes it as a DTMF input event that can trigger DTMF transitions
+   * in the agent flow.
+   *
+   * @param digit - A single DTMF digit: '0'-'9', '*', or '#'
+   * @throws {Error} If called when not connected (no active call)
+   * @throws {Error} If the digit is not a valid DTMF character
+   * @fires dtmfSent When a DTMF digit is successfully sent to the agent
+   *
+   * @example Basic usage
+   * ```typescript
+   * const agent = new HamsaVoiceAgent(apiKey, config);
+   * await agent.start({ agentId, params });
+   *
+   * // Listen for DTMF send confirmations
+   * agent.on('dtmfSent', (digit) => {
+   *   console.log(`Sent DTMF digit: ${digit}`);
+   *   highlightKeypadButton(digit);
+   * });
+   *
+   * // Later, when user presses a key on the UI keypad:
+   * agent.sendDTMF('1');  // Simulates pressing "1"
+   * agent.sendDTMF('*');  // Simulates pressing "*"
+   * agent.sendDTMF('#');  // Simulates pressing "#"
+   * ```
+   *
+   * @example With UI keypad
+   * ```typescript
+   * // Create keypad buttons
+   * const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+   *
+   * digits.forEach(digit => {
+   *   const button = document.createElement('button');
+   *   button.textContent = digit;
+   *   button.onclick = () => {
+   *     try {
+   *       agent.sendDTMF(digit);
+   *       playKeyTone(digit); // Optional: play local tone feedback
+   *     } catch (error) {
+   *       console.error('Failed to send DTMF:', error.message);
+   *     }
+   *   };
+   *   keypadContainer.appendChild(button);
+   * });
+   * ```
+   *
+   * @example Error handling
+   * ```typescript
+   * try {
+   *   agent.sendDTMF('1');
+   * } catch (error) {
+   *   if (error.message.includes('not connected')) {
+   *     showConnectionError();
+   *   } else if (error.message.includes('Invalid DTMF')) {
+   *     showInvalidInputError();
+   *   }
+   * }
+   * ```
+   */
+  sendDTMF(digit: DTMFDigit): void {
+    // Validate the digit is a valid DTMF character
+    const validDigits = new Set([
+      '0',
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      '*',
+      '#',
+    ]);
+
+    if (!validDigits.has(digit)) {
+      throw new Error(
+        `Invalid DTMF digit: "${digit}". Valid digits are 0-9, *, and #.`
+      );
+    }
+
+    // Check if connected
+    const room = this.liveKitManager?.connection?.room;
+    if (!(this.liveKitManager?.isConnected && room?.localParticipant)) {
+      throw new Error(
+        'Cannot send DTMF: not connected to voice agent. Call start() first.'
+      );
+    }
+
+    // Create the DTMF message payload
+    const dtmfMessage = {
+      event: 'dtmf',
+      content: digit,
+      timestamp: Date.now(),
+    };
+
+    // Encode the message as binary data
+    const encoder = new TextEncoder();
+    const data = encoder.encode(JSON.stringify(dtmfMessage));
+
+    this.logger.log('Sending DTMF digit', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        digit,
+        messageSize: data.length,
+      },
+    });
+
+    // Send through LiveKit data channel with reliable delivery
+    room.localParticipant.publishData(data, {
+      reliable: true,
+      topic: 'dtmf',
+    });
+
+    this.logger.log('DTMF digit sent successfully', {
+      source: 'HamsaVoiceAgent',
+      error: { digit },
+    });
+
+    // Emit event to notify listeners
+    this.emit('dtmfSent', digit);
   }
 
   /**
