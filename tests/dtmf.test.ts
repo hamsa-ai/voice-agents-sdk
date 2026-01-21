@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
-import HamsaVoiceAgent from '../src/main';
+import HamsaVoiceAgent, { type DTMFDigit } from '../src/main';
 import { mockSuccessfulConversationInit } from './utils/fetch-mocks';
 import { MOCK_CONFIG } from './utils/test-constants';
 import {
@@ -13,6 +13,20 @@ describe('HamsaVoiceAgent DTMF Support', () => {
   const mockConfig = {
     API_URL: MOCK_CONFIG.API_URL,
   };
+
+  // RFC 4733 DTMF Codes
+  const DTMF_CODE_0 = 0;
+  const DTMF_CODE_1 = 1;
+  const DTMF_CODE_2 = 2;
+  const DTMF_CODE_3 = 3;
+  const DTMF_CODE_4 = 4;
+  const DTMF_CODE_5 = 5;
+  const DTMF_CODE_6 = 6;
+  const DTMF_CODE_7 = 7;
+  const DTMF_CODE_8 = 8;
+  const DTMF_CODE_9 = 9;
+  const DTMF_CODE_STAR = 10;
+  const DTMF_CODE_HASH = 11;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -56,7 +70,7 @@ describe('HamsaVoiceAgent DTMF Support', () => {
     });
 
     describe('when connected', () => {
-      let mockPublishData: jest.Mock;
+      let mockPublishDtmf: jest.Mock;
       let mockRoom: any;
 
       beforeEach(async () => {
@@ -72,11 +86,11 @@ describe('HamsaVoiceAgent DTMF Support', () => {
           tools: [],
         });
 
-        // Set up mock room with publishData method
-        mockPublishData = jest.fn();
+        // Set up mock room with publishDtmf method
+        mockPublishDtmf = jest.fn();
         mockRoom = {
           localParticipant: {
-            publishData: mockPublishData,
+            publishDtmf: mockPublishDtmf,
           },
         };
 
@@ -87,57 +101,35 @@ describe('HamsaVoiceAgent DTMF Support', () => {
         }
       });
 
-      test('should send valid DTMF digit "1"', () => {
+      test('should send valid DTMF digit "1" with correct code', () => {
         voiceAgent.sendDTMF('1');
 
-        expect(mockPublishData).toHaveBeenCalledTimes(1);
-        const [data, options] = mockPublishData.mock.calls[0] as [
-          Uint8Array,
-          { reliable: boolean; topic: string },
-        ];
-
-        // Verify options
-        expect(options).toEqual({
-          reliable: true,
-          topic: 'dtmf',
-        });
-
-        // Verify data content
-        const decoded = new TextDecoder().decode(data);
-        const message = JSON.parse(decoded);
-        expect(message.event).toBe('dtmf');
-        expect(message.content).toBe('1');
-        expect(typeof message.timestamp).toBe('number');
+        expect(mockPublishDtmf).toHaveBeenCalledTimes(1);
+        expect(mockPublishDtmf).toHaveBeenCalledWith(DTMF_CODE_1, '1');
       });
 
-      test('should send valid DTMF digit "0"', () => {
+      test('should send valid DTMF digit "0" with correct code', () => {
         voiceAgent.sendDTMF('0');
 
-        const [data] = mockPublishData.mock.calls[0] as [Uint8Array];
-        const decoded = new TextDecoder().decode(data);
-        const message = JSON.parse(decoded);
-        expect(message.content).toBe('0');
+        expect(mockPublishDtmf).toHaveBeenCalledTimes(1);
+        expect(mockPublishDtmf).toHaveBeenCalledWith(DTMF_CODE_0, '0');
       });
 
-      test('should send valid DTMF digit "*"', () => {
+      test('should send valid DTMF digit "*" with correct code', () => {
         voiceAgent.sendDTMF('*');
 
-        const [data] = mockPublishData.mock.calls[0] as [Uint8Array];
-        const decoded = new TextDecoder().decode(data);
-        const message = JSON.parse(decoded);
-        expect(message.content).toBe('*');
+        expect(mockPublishDtmf).toHaveBeenCalledTimes(1);
+        expect(mockPublishDtmf).toHaveBeenCalledWith(DTMF_CODE_STAR, '*');
       });
 
-      test('should send valid DTMF digit "#"', () => {
+      test('should send valid DTMF digit "#" with correct code', () => {
         voiceAgent.sendDTMF('#');
 
-        const [data] = mockPublishData.mock.calls[0] as [Uint8Array];
-        const decoded = new TextDecoder().decode(data);
-        const message = JSON.parse(decoded);
-        expect(message.content).toBe('#');
+        expect(mockPublishDtmf).toHaveBeenCalledTimes(1);
+        expect(mockPublishDtmf).toHaveBeenCalledWith(DTMF_CODE_HASH, '#');
       });
 
-      test('should send all numeric DTMF digits correctly', () => {
+      test('should send all numeric DTMF digits with correct codes', () => {
         const digits = [
           '0',
           '1',
@@ -151,66 +143,72 @@ describe('HamsaVoiceAgent DTMF Support', () => {
           '9',
         ] as const;
 
-        for (const digit of digits) {
-          mockPublishData.mockClear();
-          voiceAgent.sendDTMF(digit);
+        const expectedCodes = [
+          DTMF_CODE_0,
+          DTMF_CODE_1,
+          DTMF_CODE_2,
+          DTMF_CODE_3,
+          DTMF_CODE_4,
+          DTMF_CODE_5,
+          DTMF_CODE_6,
+          DTMF_CODE_7,
+          DTMF_CODE_8,
+          DTMF_CODE_9,
+        ];
 
-          expect(mockPublishData).toHaveBeenCalledTimes(1);
-          const [data] = mockPublishData.mock.calls[0] as [Uint8Array];
-          const decoded = new TextDecoder().decode(data);
-          const message = JSON.parse(decoded);
-          expect(message.content).toBe(digit);
+        for (let i = 0; i < digits.length; i++) {
+          mockPublishDtmf.mockClear();
+          voiceAgent.sendDTMF(digits[i]);
+
+          expect(mockPublishDtmf).toHaveBeenCalledTimes(1);
+          expect(mockPublishDtmf).toHaveBeenCalledWith(
+            expectedCodes[i],
+            digits[i]
+          );
         }
       });
 
       test('should handle multiple DTMF sends in quick succession', () => {
         const digitsToSend = ['1', '2', '3'] as const;
+        const expectedCodes = [DTMF_CODE_1, DTMF_CODE_2, DTMF_CODE_3];
+
         for (const digit of digitsToSend) {
           voiceAgent.sendDTMF(digit);
         }
 
-        expect(mockPublishData).toHaveBeenCalledTimes(digitsToSend.length);
+        expect(mockPublishDtmf).toHaveBeenCalledTimes(digitsToSend.length);
 
-        // Verify each call sent the correct digit
-        const sentDigits = mockPublishData.mock.calls.map((call: unknown[]) => {
-          const decoded = new TextDecoder().decode(call[0] as Uint8Array);
-          return JSON.parse(decoded).content;
-        });
-
-        expect(sentDigits).toEqual([...digitsToSend]);
+        // Verify each call sent the correct digit and code
+        for (let i = 0; i < digitsToSend.length; i++) {
+          expect(mockPublishDtmf).toHaveBeenNthCalledWith(
+            i + 1,
+            expectedCodes[i],
+            digitsToSend[i]
+          );
+        }
       });
 
-      test('should include timestamp in DTMF message', () => {
-        const beforeTimestamp = Date.now();
-        voiceAgent.sendDTMF('5');
-        const afterTimestamp = Date.now();
-
-        const [data] = mockPublishData.mock.calls[0] as [Uint8Array];
-        const decoded = new TextDecoder().decode(data);
-        const message = JSON.parse(decoded);
-
-        expect(message.timestamp).toBeGreaterThanOrEqual(beforeTimestamp);
-        expect(message.timestamp).toBeLessThanOrEqual(afterTimestamp);
-      });
-
-      test('should use reliable delivery for DTMF messages', () => {
-        voiceAgent.sendDTMF('9');
-
-        const [, options] = mockPublishData.mock.calls[0] as [
-          Uint8Array,
-          { reliable: boolean; topic: string },
+      test('should use RFC 4733 code mapping', () => {
+        const testCases: [DTMFDigit, number][] = [
+          ['0', DTMF_CODE_0],
+          ['1', DTMF_CODE_1],
+          ['2', DTMF_CODE_2],
+          ['3', DTMF_CODE_3],
+          ['4', DTMF_CODE_4],
+          ['5', DTMF_CODE_5],
+          ['6', DTMF_CODE_6],
+          ['7', DTMF_CODE_7],
+          ['8', DTMF_CODE_8],
+          ['9', DTMF_CODE_9],
+          ['*', DTMF_CODE_STAR],
+          ['#', DTMF_CODE_HASH],
         ];
-        expect(options.reliable).toBe(true);
-      });
 
-      test('should use "dtmf" topic for messages', () => {
-        voiceAgent.sendDTMF('7');
-
-        const [, options] = mockPublishData.mock.calls[0] as [
-          Uint8Array,
-          { reliable: boolean; topic: string },
-        ];
-        expect(options.topic).toBe('dtmf');
+        for (const [digit, expectedCode] of testCases) {
+          mockPublishDtmf.mockClear();
+          voiceAgent.sendDTMF(digit);
+          expect(mockPublishDtmf).toHaveBeenCalledWith(expectedCode, digit);
+        }
       });
 
       test('should emit dtmfSent event when digit is sent', () => {

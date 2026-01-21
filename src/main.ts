@@ -730,9 +730,8 @@ class HamsaVoiceAgent extends EventEmitter {
    * browser-based call testing with DTMF input simulation, allowing users to
    * test IVR flows and DTMF transitions without making actual phone calls.
    *
-   * The DTMF digit is sent through the LiveKit data channel to the server,
-   * which processes it as a DTMF input event that can trigger DTMF transitions
-   * in the agent flow.
+   * Uses LiveKit's native DTMF API (publishDtmf) which properly integrates with
+   * telephony systems and SIP infrastructure per RFC 4733 standard.
    *
    * @param digit - A single DTMF digit: '0'-'9', '*', or '#'
    * @throws {Error} If called when not connected (no active call)
@@ -790,23 +789,25 @@ class HamsaVoiceAgent extends EventEmitter {
    * ```
    */
   sendDTMF(digit: DTMFDigit): void {
-    // Validate the digit is a valid DTMF character
-    const validDigits = new Set([
-      '0',
-      '1',
-      '2',
-      '3',
-      '4',
-      '5',
-      '6',
-      '7',
-      '8',
-      '9',
-      '*',
-      '#',
-    ]);
+    // DTMF code mapping per RFC 4733
+    // See: https://datatracker.ietf.org/doc/html/rfc4733#section-3.2
+    const dtmfCodeMap: Record<DTMFDigit, number> = {
+      '0': 0,
+      '1': 1,
+      '2': 2,
+      '3': 3,
+      '4': 4,
+      '5': 5,
+      '6': 6,
+      '7': 7,
+      '8': 8,
+      '9': 9,
+      '*': 10,
+      '#': 11,
+    };
 
-    if (!validDigits.has(digit)) {
+    // Validate the digit is a valid DTMF character
+    if (!(digit in dtmfCodeMap)) {
       throw new Error(
         `Invalid DTMF digit: "${digit}". Valid digits are 0-9, *, and #.`
       );
@@ -820,34 +821,23 @@ class HamsaVoiceAgent extends EventEmitter {
       );
     }
 
-    // Create the DTMF message payload
-    const dtmfMessage = {
-      event: 'dtmf',
-      content: digit,
-      timestamp: Date.now(),
-    };
-
-    // Encode the message as binary data
-    const encoder = new TextEncoder();
-    const data = encoder.encode(JSON.stringify(dtmfMessage));
+    const code = dtmfCodeMap[digit];
 
     this.logger.log('Sending DTMF digit', {
       source: 'HamsaVoiceAgent',
       error: {
         digit,
-        messageSize: data.length,
+        code,
       },
     });
 
-    // Send through LiveKit data channel with reliable delivery
-    room.localParticipant.publishData(data, {
-      reliable: true,
-      topic: 'dtmf',
-    });
+    // Use LiveKit's native DTMF API
+    // This properly integrates with SIP/telephony systems
+    room.localParticipant.publishDtmf(code, digit);
 
     this.logger.log('DTMF digit sent successfully', {
       source: 'HamsaVoiceAgent',
-      error: { digit },
+      error: { digit, code },
     });
 
     // Emit event to notify listeners

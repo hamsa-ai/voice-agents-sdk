@@ -559,9 +559,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * browser-based call testing with DTMF input simulation, allowing users to
      * test IVR flows and DTMF transitions without making actual phone calls.
      *
-     * The DTMF digit is sent through the LiveKit data channel to the server,
-     * which processes it as a DTMF input event that can trigger DTMF transitions
-     * in the agent flow.
+     * Uses LiveKit's native DTMF API (publishDtmf) which properly integrates with
+     * telephony systems and SIP infrastructure per RFC 4733 standard.
      *
      * @param digit - A single DTMF digit: '0'-'9', '*', or '#'
      * @throws {Error} If called when not connected (no active call)
