@@ -117,7 +117,7 @@ describe('LiveKitManager - Tool Registry', () => {
 
       const result = await rpcHandler(rpcData);
 
-      expect(mockTool.fn).toHaveBeenCalledWith('value1', 'value2');
+      expect(mockTool.fn).toHaveBeenCalledWith('value1', 'value2', rpcData);
       expect(result).toBe(
         JSON.stringify({ success: true, data: 'test result' })
       );
@@ -186,7 +186,7 @@ describe('LiveKitManager - Tool Registry', () => {
 
       const result = await rpcHandler(rpcData);
 
-      expect(mockTool.fn).toHaveBeenCalledWith();
+      expect(mockTool.fn).toHaveBeenCalledWith(rpcData);
       expect(result).toBe(JSON.stringify('result'));
     });
 
@@ -227,7 +227,8 @@ describe('LiveKitManager - Tool Registry', () => {
         TEST_NUMBER,
         true,
         { nested: 'value' },
-        TEST_ARRAY
+        TEST_ARRAY,
+        rpcData
       );
       expect(result).toBe(JSON.stringify({ processed: true }));
     });

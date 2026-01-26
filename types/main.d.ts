@@ -3,6 +3,8 @@ import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, R
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
 import type { AudioCaptureCallback, AudioCaptureOptions, ConnectionQualityData, DTMFDigit, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
+export type { RpcInvocationData } from 'livekit-client';
+export { RpcError } from 'livekit-client';
 export type { AgentState } from './classes/livekit-manager';
 export type { AudioCaptureCallback, AudioCaptureFormat, AudioCaptureMetadata, AudioCaptureOptions, AudioCaptureSource, DTMFDigit, } from './classes/types';
 /**
@@ -105,6 +107,8 @@ type Tool = {
     required?: string[];
     /** Internal function mapping (used for tool execution) */
     func_map?: Record<string, unknown>;
+    /** The implementation function to execute when the agent calls this tool */
+    fn?: (...args: unknown[]) => unknown | Promise<unknown>;
 };
 /**
  * Definition of a parameter for a client-side tool
@@ -225,6 +229,10 @@ type HamsaVoiceAgentEvents = {
     customEvent: (eventType: string, eventData: unknown, metadata?: Record<string, unknown>) => void;
     /** Emitted for informational messages */
     info: (info: string) => void;
+    /** Emitted when tools are registered with the agent */
+    toolsRegistered: (tools: Tool[]) => void;
+    /** Emitted when a client-side tool execution fails */
+    rpcError: (functionName: string, error: unknown) => void;
 };
 /**
  * HamsaVoiceAgent - Main SDK class for voice agent integration

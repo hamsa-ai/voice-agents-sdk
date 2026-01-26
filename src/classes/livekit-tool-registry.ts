@@ -179,7 +179,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { Room } from 'livekit-client';
+import type { Room, RpcInvocationData } from 'livekit-client';
 import { createDebugLogger, type DebugLogger } from '../utils';
 import type { Tool } from './types';
 
@@ -328,7 +328,8 @@ export class LiveKitToolRegistry extends EventEmitter {
    * wrapped with error handling and JSON serialization for secure, reliable
    * execution. Registration only occurs when both room and tools are available.
    *
-   * @fires toolsRegistered When tools are successfully registered with count
+   * @fires toolsRegistered When tools are successfully registered with the list of tools
+   * @fires rpcError When a tool execution fails
    *
    * @example
    * ```typescript
@@ -336,14 +337,14 @@ export class LiveKitToolRegistry extends EventEmitter {
    * registry.registerTools();
    *
    * // Listen for registration confirmation
-   * registry.on('toolsRegistered', (count) => {
-   *   console.log(`${count} tools registered successfully`);
+   * registry.on('toolsRegistered', (tools) => {
+   *   console.log(`${tools.length} tools registered successfully`);
    *
    *   // Notify agent about available tools
    *   sendAgentMessage({
    *     type: 'tools_ready',
-   *     count: count,
-   *     tools: registry.getTools().map(t => ({
+   *     count: tools.length,
+   *     tools: tools.map(t => ({
    *       name: t.function_name,
    *       description: t.description
    *     }))
@@ -355,7 +356,7 @@ export class LiveKitToolRegistry extends EventEmitter {
    * 1. Validates tool structure (function_name, fn)
    * 2. Creates RPC method wrapper with error handling
    * 3. Registers with LiveKit room's local participant
-   * 4. Emits toolsRegistered event with count
+   * 4. Emits toolsRegistered event with tools list
    * 5. Tools become immediately available for agent calls
    */
   registerTools(): void {
@@ -368,21 +369,25 @@ export class LiveKitToolRegistry extends EventEmitter {
 
     for (const tool of this.tools) {
       if (tool.function_name && typeof tool.fn === 'function') {
-        this.room.registerRpcMethod(tool.function_name, async (data) => {
-          try {
-            const args = JSON.parse(data.payload || '{}');
-            const result = await tool.fn?.(...Object.values(args));
-            return JSON.stringify(result);
-          } catch (error) {
-            return JSON.stringify({
-              error: error instanceof Error ? error.message : String(error),
-            });
+        this.room.registerRpcMethod(
+          tool.function_name,
+          async (data: RpcInvocationData) => {
+            try {
+              const args = JSON.parse(data.payload || '{}');
+              const result = await tool.fn?.(...Object.values(args), data);
+              return JSON.stringify(result);
+            } catch (error) {
+              this.emit('rpcError', tool.function_name, error);
+              return JSON.stringify({
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
-        });
+        );
         this.registeredMethods.add(tool.function_name);
       }
     }
-    this.emit('toolsRegistered', this.tools.length);
+    this.emit('toolsRegistered', this.tools);
   }
 
   /**

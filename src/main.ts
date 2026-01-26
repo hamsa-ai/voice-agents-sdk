@@ -30,6 +30,9 @@ import type {
 } from './classes/types';
 import { createDebugLogger, type DebugLogger } from './utils';
 
+export type { RpcInvocationData } from 'livekit-client';
+// biome-ignore lint/performance/noBarrelFile: This is the main SDK entry point - re-exports are intentional for developer convenience
+export { RpcError } from 'livekit-client';
 // Re-export types for convenience
 export type { AgentState } from './classes/livekit-manager';
 export type {
@@ -150,6 +153,8 @@ type Tool = {
   required?: string[];
   /** Internal function mapping (used for tool execution) */
   func_map?: Record<string, unknown>;
+  /** The implementation function to execute when the agent calls this tool */
+  fn?: (...args: unknown[]) => unknown | Promise<unknown>;
 };
 
 /**
@@ -318,6 +323,12 @@ type HamsaVoiceAgentEvents = {
   ) => void;
   /** Emitted for informational messages */
   info: (info: string) => void;
+
+  // Tool events
+  /** Emitted when tools are registered with the agent */
+  toolsRegistered: (tools: Tool[]) => void;
+  /** Emitted when a client-side tool execution fails */
+  rpcError: (functionName: string, error: unknown) => void;
 };
 
 /**
@@ -1397,6 +1408,12 @@ class HamsaVoiceAgent extends EventEmitter {
         )
         .on('dataReceived', (message, participant) =>
           this.emit('dataReceived', message, participant)
+        )
+        .on('toolsRegistered', (registeredTools) =>
+          this.emit('toolsRegistered', registeredTools)
+        )
+        .on('rpcError', (functionName, error) =>
+          this.emit('rpcError', functionName, error)
         );
 
       // Connect to LiveKit room

@@ -1068,8 +1068,12 @@ export default class LiveKitManager extends EventEmitter {
     // No need for stream-specific forwarding
 
     // Forward tool registration confirmations for debugging
-    this.toolRegistry.on('toolsRegistered', (count) =>
-      this.emit('toolsRegistered', count)
+    this.toolRegistry.on('toolsRegistered', (tools) =>
+      this.emit('toolsRegistered', tools)
+    );
+
+    this.toolRegistry.on('rpcError', (functionName, error) =>
+      this.emit('rpcError', functionName, error)
     );
   }
 

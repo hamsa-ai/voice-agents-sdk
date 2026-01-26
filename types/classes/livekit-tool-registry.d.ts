@@ -299,7 +299,8 @@ export declare class LiveKitToolRegistry extends EventEmitter {
      * wrapped with error handling and JSON serialization for secure, reliable
      * execution. Registration only occurs when both room and tools are available.
      *
-     * @fires toolsRegistered When tools are successfully registered with count
+     * @fires toolsRegistered When tools are successfully registered with the list of tools
+     * @fires rpcError When a tool execution fails
      *
      * @example
      * ```typescript
@@ -307,14 +308,14 @@ export declare class LiveKitToolRegistry extends EventEmitter {
      * registry.registerTools();
      *
      * // Listen for registration confirmation
-     * registry.on('toolsRegistered', (count) => {
-     *   console.log(`${count} tools registered successfully`);
+     * registry.on('toolsRegistered', (tools) => {
+     *   console.log(`${tools.length} tools registered successfully`);
      *
      *   // Notify agent about available tools
      *   sendAgentMessage({
      *     type: 'tools_ready',
-     *     count: count,
-     *     tools: registry.getTools().map(t => ({
+     *     count: tools.length,
+     *     tools: tools.map(t => ({
      *       name: t.function_name,
      *       description: t.description
      *     }))
@@ -326,7 +327,7 @@ export declare class LiveKitToolRegistry extends EventEmitter {
      * 1. Validates tool structure (function_name, fn)
      * 2. Creates RPC method wrapper with error handling
      * 3. Registers with LiveKit room's local participant
-     * 4. Emits toolsRegistered event with count
+     * 4. Emits toolsRegistered event with tools list
      * 5. Tools become immediately available for agent calls
      */
     registerTools(): void;
