@@ -201,6 +201,9 @@ export class LiveKitToolRegistry extends EventEmitter {
   /** Array of client-side tools available for agent execution */
   private tools: Tool[] = [];
 
+  /** Set of currently registered RPC method names for cleanup */
+  private readonly registeredMethods: Set<string> = new Set();
+
   /** Debug logger instance for conditional logging */
   private readonly logger: DebugLogger;
 
@@ -360,9 +363,12 @@ export class LiveKitToolRegistry extends EventEmitter {
       return;
     }
 
+    // Unregister previously registered methods to avoid duplicates
+    this.unregisterAllTools();
+
     for (const tool of this.tools) {
       if (tool.function_name && typeof tool.fn === 'function') {
-        this.room?.registerRpcMethod(tool.function_name, async (data) => {
+        this.room.registerRpcMethod(tool.function_name, async (data) => {
           try {
             const args = JSON.parse(data.payload || '{}');
             const result = await tool.fn?.(...Object.values(args));
@@ -373,9 +379,41 @@ export class LiveKitToolRegistry extends EventEmitter {
             });
           }
         });
+        this.registeredMethods.add(tool.function_name);
       }
     }
     this.emit('toolsRegistered', this.tools.length);
+  }
+
+  /**
+   * Unregisters all currently registered RPC methods
+   *
+   * Removes all tool RPC handlers from the LiveKit room.
+   * This is called automatically before re-registering tools to prevent
+   * duplicate registration errors.
+   *
+   * @example
+   * ```typescript
+   * // Manually unregister all tools
+   * registry.unregisterAllTools();
+   *
+   * // Tools are no longer available to the agent
+   * console.log('All tools unregistered');
+   * ```
+   */
+  unregisterAllTools(): void {
+    if (!this.room) {
+      return;
+    }
+
+    for (const methodName of this.registeredMethods) {
+      try {
+        this.room.unregisterRpcMethod(methodName);
+      } catch {
+        // Ignore errors during unregistration (method may not exist)
+      }
+    }
+    this.registeredMethods.clear();
   }
 
   /**

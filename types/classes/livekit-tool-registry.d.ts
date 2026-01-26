@@ -195,6 +195,8 @@ export declare class LiveKitToolRegistry extends EventEmitter {
     private room;
     /** Array of client-side tools available for agent execution */
     private tools;
+    /** Set of currently registered RPC method names for cleanup */
+    private readonly registeredMethods;
     /** Debug logger instance for conditional logging */
     private readonly logger;
     /**
@@ -328,6 +330,23 @@ export declare class LiveKitToolRegistry extends EventEmitter {
      * 5. Tools become immediately available for agent calls
      */
     registerTools(): void;
+    /**
+     * Unregisters all currently registered RPC methods
+     *
+     * Removes all tool RPC handlers from the LiveKit room.
+     * This is called automatically before re-registering tools to prevent
+     * duplicate registration errors.
+     *
+     * @example
+     * ```typescript
+     * // Manually unregister all tools
+     * registry.unregisterAllTools();
+     *
+     * // Tools are no longer available to the agent
+     * console.log('All tools unregistered');
+     * ```
+     */
+    unregisterAllTools(): void;
     /**
      * Processes incoming data messages from voice agents and participants
      *
