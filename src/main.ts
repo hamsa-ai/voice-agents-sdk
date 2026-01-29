@@ -1406,9 +1406,18 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('customEvent', (eventType, eventData, metadata) =>
           this.emit('customEvent', eventType, eventData, metadata)
         )
-        .on('dataReceived', (message, participant) =>
-          this.emit('dataReceived', message, participant)
-        )
+        .on('dataReceived', (message, participant) => {
+          // When flow completes (e.g. end call node reached), end the agent so
+          // the microphone is released and callEnded is emitted.
+          if (this.#isFlowCompletedMessage(message)) {
+            this.logger.log('Flow completed detected from data - ending call', {
+              source: 'HamsaVoiceAgent',
+              error: { participant },
+            });
+            this.end();
+          }
+          this.emit('dataReceived', message, participant);
+        })
         .on('toolsRegistered', (registeredTools) =>
           this.emit('toolsRegistered', registeredTools)
         )
@@ -1542,6 +1551,51 @@ class HamsaVoiceAgent extends EventEmitter {
       });
 
     this.#releaseWakeLock();
+  }
+
+  /**
+   * Resolves the log object from a data message (top-level, content, or data).
+   * @private
+   */
+  #getLogFromMessage(message: unknown): Record<string, unknown> | null {
+    const obj =
+      message && typeof message === 'object'
+        ? (message as Record<string, unknown>)
+        : null;
+    if (!obj) {
+      return null;
+    }
+    if (obj.payload !== undefined) {
+      return obj;
+    }
+    if (obj.content && typeof obj.content === 'object') {
+      return obj.content as Record<string, unknown>;
+    }
+    if (obj.data && typeof obj.data === 'object') {
+      return obj.data as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  /**
+   * Detects if a data message indicates the agent flow has completed (e.g. end call node).
+   * When the backend sends a log/payload with reason 'end_node' or message "flow completed",
+   * we should end the call so the microphone is released and callEnded is emitted.
+   * @private
+   */
+  #isFlowCompletedMessage(message: unknown): boolean {
+    const log = this.#getLogFromMessage(message);
+    if (!log) {
+      return false;
+    }
+    const payload = log.payload as Record<string, unknown> | undefined;
+    const msg = log.message;
+    const reasonEndNode =
+      payload?.reason === 'end_node' ||
+      (payload?.success === true && payload?.reason === 'end_node');
+    const messageFlowCompleted =
+      typeof msg === 'string' && msg.toLowerCase().includes('flow completed');
+    return Boolean(reasonEndNode || messageFlowCompleted);
   }
 
   /**
