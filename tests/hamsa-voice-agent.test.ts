@@ -734,7 +734,7 @@ describe('HamsaVoiceAgent', () => {
       expect(wakeLockMocks.release).toHaveBeenCalledTimes(2); // pause + end
     });
 
-    test('should end call when flow completed is received via dataReceived', async () => {
+    test('should end call when explicit end-call signal (category END_CALL) is received', async () => {
       const wakeLockMocks = createWakeLockMocks();
       applyWakeLockMocks(voiceAgent, wakeLockMocks);
 
@@ -750,21 +750,16 @@ describe('HamsaVoiceAgent', () => {
 
       const endSpy = jest.spyOn(voiceAgent, 'end');
 
-      // Emit flow-completed message (e.g. from backend when end call node is reached)
-      const flowCompletedMessage = {
-        payload: { reason: 'end_node', success: true },
-        message: 'Flow completed',
-      };
-      voiceAgent.liveKitManager?.emit(
-        'dataReceived',
-        flowCompletedMessage,
-        'agent'
-      );
+      voiceAgent.liveKitManager?.emit('dataReceived', {
+        category: 'END_CALL',
+        message: 'Ending call',
+        payload: {},
+      });
 
       expect(endSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('should end call when flow completed has only reason end_node in payload', async () => {
+    test('should end call when message contains "Ending call"', async () => {
       const wakeLockMocks = createWakeLockMocks();
       applyWakeLockMocks(voiceAgent, wakeLockMocks);
 
@@ -779,14 +774,15 @@ describe('HamsaVoiceAgent', () => {
       const endSpy = jest.spyOn(voiceAgent, 'end');
 
       voiceAgent.liveKitManager?.emit('dataReceived', {
-        payload: { reason: 'end_node' },
-        message: 'Done',
+        category: 'INFO',
+        message: 'Ending call',
+        payload: {},
       });
 
       expect(endSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('should end call when flow completed message is in content wrapper', async () => {
+    test('should end call when explicit end-call is in content wrapper', async () => {
       const wakeLockMocks = createWakeLockMocks();
       applyWakeLockMocks(voiceAgent, wakeLockMocks);
 
@@ -803,15 +799,38 @@ describe('HamsaVoiceAgent', () => {
       voiceAgent.liveKitManager?.emit('dataReceived', {
         event: 'log',
         content: {
-          payload: { reason: 'end_node' },
-          message: 'flow completed',
+          category: 'END_CALL',
+          message: 'Ending call',
+          payload: {},
         },
       });
 
       expect(endSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('should not end call when dataReceived has non-flow-completed message', async () => {
+    test('should not end call when dataReceived has dead-end node (flow completed)', async () => {
+      const wakeLockMocks = createWakeLockMocks();
+      applyWakeLockMocks(voiceAgent, wakeLockMocks);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+        tools: [],
+      });
+
+      voiceAgent.liveKitManager?.emit('connected');
+      const endSpy = jest.spyOn(voiceAgent, 'end');
+
+      voiceAgent.liveKitManager?.emit('dataReceived', {
+        payload: { reason: 'end_node', success: true },
+        message: 'Flow completed',
+      });
+
+      expect(endSpy).not.toHaveBeenCalled();
+    });
+
+    test('should not end call when dataReceived has non-end-call message', async () => {
       const wakeLockMocks = createWakeLockMocks();
       applyWakeLockMocks(voiceAgent, wakeLockMocks);
 

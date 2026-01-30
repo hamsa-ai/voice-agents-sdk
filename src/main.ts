@@ -1407,10 +1407,10 @@ class HamsaVoiceAgent extends EventEmitter {
           this.emit('customEvent', eventType, eventData, metadata)
         )
         .on('dataReceived', (message, participant) => {
-          // When flow completes (e.g. end call node reached), end the agent so
-          // the microphone is released and callEnded is emitted.
-          if (this.#isFlowCompletedMessage(message)) {
-            this.logger.log('Flow completed detected from data - ending call', {
+          // End the call only on an explicit end-call signal (End Call node), not
+          // when the flow reaches any dead-end node. Avoids ending mid-conversation.
+          if (this.#isExplicitEndCallMessage(message)) {
+            this.logger.log('Explicit end-call signal received - ending call', {
               source: 'HamsaVoiceAgent',
               error: { participant },
             });
@@ -1578,24 +1578,23 @@ class HamsaVoiceAgent extends EventEmitter {
   }
 
   /**
-   * Detects if a data message indicates the agent flow has completed (e.g. end call node).
-   * When the backend sends a log/payload with reason 'end_node' or message "flow completed",
-   * we should end the call so the microphone is released and callEnded is emitted.
+   * Detects an explicit end-call signal: category === 'END_CALL' or message contains "Ending call".
+   * We do not end on generic "flow completed" or dead-end nodes—only when the flow (or user)
+   * explicitly triggers an End Call node, so the call is not terminated mid-conversation.
    * @private
    */
-  #isFlowCompletedMessage(message: unknown): boolean {
+  #isExplicitEndCallMessage(message: unknown): boolean {
     const log = this.#getLogFromMessage(message);
     if (!log) {
       return false;
     }
-    const payload = log.payload as Record<string, unknown> | undefined;
+    const category = log.category;
     const msg = log.message;
-    const reasonEndNode =
-      payload?.reason === 'end_node' ||
-      (payload?.success === true && payload?.reason === 'end_node');
-    const messageFlowCompleted =
-      typeof msg === 'string' && msg.toLowerCase().includes('flow completed');
-    return Boolean(reasonEndNode || messageFlowCompleted);
+    const categoryEndCall =
+      typeof category === 'string' && category === 'END_CALL';
+    const messageEndingCall =
+      typeof msg === 'string' && msg.toLowerCase().includes('ending call');
+    return Boolean(categoryEndCall || messageEndingCall);
   }
 
   /**
