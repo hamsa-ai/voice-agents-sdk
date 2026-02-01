@@ -1406,18 +1406,9 @@ class HamsaVoiceAgent extends EventEmitter {
         .on('customEvent', (eventType, eventData, metadata) =>
           this.emit('customEvent', eventType, eventData, metadata)
         )
-        .on('dataReceived', (message, participant) => {
-          // End the call only on an explicit end-call signal (End Call node), not
-          // when the flow reaches any dead-end node. Avoids ending mid-conversation.
-          if (this.#isExplicitEndCallMessage(message)) {
-            this.logger.log('Explicit end-call signal received - ending call', {
-              source: 'HamsaVoiceAgent',
-              error: { participant },
-            });
-            this.end();
-          }
-          this.emit('dataReceived', message, participant);
-        })
+        .on('dataReceived', (message, participant) =>
+          this.emit('dataReceived', message, participant)
+        )
         .on('toolsRegistered', (registeredTools) =>
           this.emit('toolsRegistered', registeredTools)
         )
@@ -1551,50 +1542,6 @@ class HamsaVoiceAgent extends EventEmitter {
       });
 
     this.#releaseWakeLock();
-  }
-
-  /**
-   * Resolves the log object from a data message (top-level, content, or data).
-   * @private
-   */
-  #getLogFromMessage(message: unknown): Record<string, unknown> | null {
-    const obj =
-      message && typeof message === 'object'
-        ? (message as Record<string, unknown>)
-        : null;
-    if (!obj) {
-      return null;
-    }
-    if (obj.payload !== undefined) {
-      return obj;
-    }
-    if (obj.content && typeof obj.content === 'object') {
-      return obj.content as Record<string, unknown>;
-    }
-    if (obj.data && typeof obj.data === 'object') {
-      return obj.data as Record<string, unknown>;
-    }
-    return null;
-  }
-
-  /**
-   * Detects an explicit end-call signal: category === 'END_CALL' or message contains "Ending call".
-   * We do not end on generic "flow completed" or dead-end nodes—only when the flow (or user)
-   * explicitly triggers an End Call node, so the call is not terminated mid-conversation.
-   * @private
-   */
-  #isExplicitEndCallMessage(message: unknown): boolean {
-    const log = this.#getLogFromMessage(message);
-    if (!log) {
-      return false;
-    }
-    const category = log.category;
-    const msg = log.message;
-    const categoryEndCall =
-      typeof category === 'string' && category === 'END_CALL';
-    const messageEndingCall =
-      typeof msg === 'string' && msg.toLowerCase().includes('ending call');
-    return Boolean(categoryEndCall || messageEndingCall);
   }
 
   /**
