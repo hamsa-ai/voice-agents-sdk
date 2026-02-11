@@ -54,7 +54,9 @@ describe('LiveKitManager - Connection Management', () => {
         mockUrl,
         mockToken
       );
-      expect(mockRoom.connect).toHaveBeenCalledWith(mockUrl, mockToken);
+      expect(mockRoom.connect).toHaveBeenCalledWith(mockUrl, mockToken, {
+        maxRetries: 3,
+      });
     });
 
     test('should handle connection errors', async () => {
