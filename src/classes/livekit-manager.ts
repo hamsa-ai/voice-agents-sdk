@@ -101,6 +101,12 @@ export default class LiveKitManager extends EventEmitter {
   /** Debug logger instance for conditional logging */
   logger: DebugLogger;
 
+  /** CSS selector for the element where avatar video will be rendered */
+  avatarContainerSelector: string | undefined;
+
+  /** Video elements created for avatar tracks, tracked for cleanup */
+  videoElements: Set<HTMLVideoElement>;
+
   /**
    * Creates a new LiveKitManager instance
    *
@@ -129,13 +135,18 @@ export default class LiveKitManager extends EventEmitter {
     lkUrl: string,
     accessToken: string,
     tools: Tool[] = [],
-    debug = false
+    {
+      debug = false,
+      avatarContainerSelector,
+    }: { debug?: boolean; avatarContainerSelector?: string } = {}
   ) {
     super();
 
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
     this.logger = createDebugLogger(debug);
+    this.avatarContainerSelector = avatarContainerSelector;
+    this.videoElements = new Set();
 
     this.logger.log('Initializing LiveKitManager', {
       source: 'LiveKitManager',
@@ -1126,6 +1137,11 @@ export default class LiveKitManager extends EventEmitter {
             publication,
             participant
           );
+
+          // Attach remote video tracks (avatar) to the configured container
+          if (track.kind === Track.Kind.Video) {
+            this.#attachAvatarVideo(track);
+          }
         },
       ],
       [
@@ -1151,6 +1167,11 @@ export default class LiveKitManager extends EventEmitter {
             publication,
             participant
           );
+
+          // Detach and remove avatar video elements when the track ends
+          if (track.kind === Track.Kind.Video) {
+            this.#detachAvatarVideo(track);
+          }
         },
       ],
       [
@@ -1305,6 +1326,53 @@ export default class LiveKitManager extends EventEmitter {
   }
 
   /**
+   * Attaches a remote video track to the configured avatar container element
+   * @private
+   */
+  #attachAvatarVideo(track: RemoteTrack): void {
+    if (!this.avatarContainerSelector) {
+      return;
+    }
+
+    const container = document.querySelector(this.avatarContainerSelector);
+    if (!container) {
+      this.logger.warn('Avatar container element not found', {
+        source: 'LiveKitManager',
+        error: { selector: this.avatarContainerSelector },
+      });
+      return;
+    }
+
+    const mediaEl = track.attach();
+    if (!(mediaEl instanceof HTMLVideoElement)) {
+      return;
+    }
+
+    mediaEl.autoplay = true;
+    mediaEl.playsInline = true;
+    container.appendChild(mediaEl);
+    this.videoElements.add(mediaEl);
+
+    this.logger.log('Avatar video attached to container', {
+      source: 'LiveKitManager',
+      error: { selector: this.avatarContainerSelector, trackSid: track.sid },
+    });
+  }
+
+  /**
+   * Detaches and removes video elements for a given remote video track
+   * @private
+   */
+  #detachAvatarVideo(track: RemoteTrack): void {
+    for (const el of track.detach()) {
+      if (el instanceof HTMLVideoElement) {
+        el.remove();
+        this.videoElements.delete(el);
+      }
+    }
+  }
+
+  /**
    * Updates analytics with current participant and track counts
    *
    * This private helper method synchronizes the analytics module with the current
@@ -1359,5 +1427,11 @@ export default class LiveKitManager extends EventEmitter {
     this.audioManager.cleanup();
     this.analytics.cleanup();
     this.toolRegistry.cleanup();
+
+    // Remove any lingering avatar video elements from the DOM
+    for (const el of this.videoElements) {
+      el.remove();
+    }
+    this.videoElements.clear();
   }
 }

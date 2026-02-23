@@ -227,6 +227,50 @@ describe('LiveKitManager - Cleanup', () => {
     });
   });
 
+  describe('Avatar Video Element Cleanup', () => {
+    test('should remove video elements from DOM on disconnect', async () => {
+      const { liveKitManager } = context;
+
+      const videoElement = document.createElement('video');
+      document.body.appendChild(videoElement);
+      liveKitManager.videoElements.add(videoElement);
+
+      liveKitManager.connection.isConnected = true;
+      await liveKitManager.disconnect();
+
+      expect(liveKitManager.videoElements.size).toBe(0);
+      expect(document.body.contains(videoElement)).toBe(false);
+    });
+
+    test('should clear all video element references on cleanup', async () => {
+      const { liveKitManager } = context;
+
+      const videoElements = [
+        document.createElement('video'),
+        document.createElement('video'),
+      ];
+
+      for (const el of videoElements) {
+        document.body.appendChild(el);
+        liveKitManager.videoElements.add(el);
+      }
+
+      expect(liveKitManager.videoElements.size).toBe(2);
+
+      await liveKitManager.disconnect();
+
+      expect(liveKitManager.videoElements.size).toBe(0);
+    });
+
+    test('should handle cleanup when videoElements set is empty', async () => {
+      const { liveKitManager } = context;
+
+      expect(liveKitManager.videoElements.size).toBe(0);
+
+      await expect(liveKitManager.disconnect()).resolves.toBeUndefined();
+    });
+  });
+
   describe('Cleanup Integration', () => {
     test('should integrate cleanup with connection lifecycle', async () => {
       const { liveKitManager, mockRoom } = context;

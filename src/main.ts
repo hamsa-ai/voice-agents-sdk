@@ -109,6 +109,13 @@ type StartOptions = {
   /** Disable wake lock to allow device sleep during conversation */
   disableWakeLock?: boolean;
   /**
+   * CSS selector for the container element where the avatar video will be rendered.
+   * When provided, the agent's video track (avatar) will be attached to this element.
+   * @example '#avatar-container'
+   * @example '.agent-video-wrapper'
+   */
+  avatarContainerSelector?: string;
+  /**
    * Simple callback to receive agent audio data (Level 1 API - Simplest)
    * Automatically captures agent audio in opus-webm format with 100ms chunks
    * @example
@@ -1131,6 +1138,7 @@ class HamsaVoiceAgent extends EventEmitter {
     disableWakeLock: _disableWakeLock = false,
     onAudioData,
     captureAudio,
+    avatarContainerSelector,
   }: StartOptions): Promise<void> {
     try {
       this.logger.log('SDK initialized - disconnect debugging enabled', {
@@ -1172,7 +1180,7 @@ class HamsaVoiceAgent extends EventEmitter {
         this.LIVEKIT_URL,
         accessToken,
         tools,
-        this.debug
+        { debug: this.debug, avatarContainerSelector }
       );
 
       this.logger.log('LiveKitManager created, setting up event listeners', {

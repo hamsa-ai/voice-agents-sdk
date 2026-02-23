@@ -64,6 +64,13 @@ type StartOptions = {
     /** Disable wake lock to allow device sleep during conversation */
     disableWakeLock?: boolean;
     /**
+     * CSS selector for the container element where the avatar video will be rendered.
+     * When provided, the agent's video track (avatar) will be attached to this element.
+     * @example '#avatar-container'
+     * @example '.agent-video-wrapper'
+     */
+    avatarContainerSelector?: string;
+    /**
      * Simple callback to receive agent audio data (Level 1 API - Simplest)
      * Automatically captures agent audio in opus-webm format with 100ms chunks
      * @example
@@ -869,7 +876,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * await agent.start({ agentId: 'my_agent', voiceEnablement: true });
      * ```
      */
-    start({ agentId, params, voiceEnablement, tools, userId: _userId, preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices, connectionDelay: _connectionDelay, disableWakeLock: _disableWakeLock, onAudioData, captureAudio, }: StartOptions): Promise<void>;
+    start({ agentId, params, voiceEnablement, tools, userId: _userId, preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices, connectionDelay: _connectionDelay, disableWakeLock: _disableWakeLock, onAudioData, captureAudio, avatarContainerSelector, }: StartOptions): Promise<void>;
     /**
      * Terminates the current voice agent conversation
      *
