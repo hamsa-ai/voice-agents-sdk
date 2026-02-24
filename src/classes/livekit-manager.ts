@@ -202,12 +202,6 @@ export default class LiveKitManager extends EventEmitter {
     });
     this.#setupEventForwarding();
 
-    // Configure LiveKit room event handlers for WebRTC events
-    this.logger.log('Setting up room event handlers', {
-      source: 'LiveKitManager',
-    });
-    this.#setupRoomEventHandlers();
-
     this.logger.log('LiveKitManager initialization complete', {
       source: 'LiveKitManager',
     });
@@ -1350,6 +1344,9 @@ export default class LiveKitManager extends EventEmitter {
 
     mediaEl.autoplay = true;
     mediaEl.playsInline = true;
+    mediaEl.style.width = '100%';
+    mediaEl.style.height = '100%';
+    mediaEl.style.objectFit = 'cover';
     container.appendChild(mediaEl);
     this.videoElements.add(mediaEl);
 

@@ -35,8 +35,11 @@ export function createTestContext(): TestContext {
 
   const liveKitManager = new LiveKitManager(mockUrl, mockToken, mockTools);
 
-  // Manually set the room on audioManager since we don't call connect() in unit tests
-  liveKitManager.audioManager.setRoom(mockRoom as unknown as Room);
+  // Simulate the connected event so #setupRoomEventHandlers() is registered
+  liveKitManager.connection.emit('connected');
+
+  // Clear RPC registration calls so tool-registry tests start with a clean slate
+  mockRoom.registerRpcMethod.mockClear();
 
   return {
     liveKitManager,

@@ -310,7 +310,7 @@ describe('LiveKitManager - Event Handling', () => {
       const manager = new LiveKitManager('wss://test.com', 'token', [], {
         avatarContainerSelector,
       });
-      manager.audioManager.setRoom(freshRoom as any);
+      manager.connection.emit('connected');
       return { manager, freshRoom };
     }
 
