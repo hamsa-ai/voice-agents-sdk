@@ -34,7 +34,7 @@ describe('HamsaVoiceAgent', () => {
       const defaultAgent = new HamsaVoiceAgent(mockApiKey);
 
       expect(defaultAgent.apiKey).toBe(mockApiKey);
-      expect(defaultAgent.API_URL).toBe('https://api.tryhamsa.com');
+      expect(defaultAgent.API_URL).toBe('https://api.uae.tryhamsa.com');
       expect(defaultAgent.liveKitManager).toBeNull();
       expect(defaultAgent.jobId).toBeNull();
       expect(defaultAgent.wakeLockManager).toBeDefined();

@@ -204,7 +204,7 @@ export declare class LiveKitConnection extends EventEmitter {
      * @example
      * ```typescript
      * const connection = new LiveKitConnection(
-     *   'wss://rtc.eu.tryhamsa.com',
+     *   'wss://rtc.uae.tryhamsa.com',
      *   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
      *   false
      * );

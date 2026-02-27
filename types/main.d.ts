@@ -19,9 +19,9 @@ declare class HamsaApiError extends Error {
  * Allows customization of API endpoints and other global settings
  */
 type HamsaVoiceAgentConfig = {
-    /** Base URL for the Hamsa API. Defaults to 'https://api.tryhamsa.com' */
+    /** Base URL for the Hamsa API. Defaults to 'https://api.uae.tryhamsa.com' */
     API_URL?: string;
-    /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
+    /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.uae.tryhamsa.com' */
     LIVEKIT_URL?: string;
     /** Enable debug logging for troubleshooting. Defaults to false */
     debug?: boolean;
@@ -348,8 +348,8 @@ declare class HamsaVoiceAgent extends EventEmitter {
      *
      * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com)
      * @param config - Optional configuration settings
-     * @param config.API_URL - Custom API endpoint URL (defaults to https://api.tryhamsa.com)
-     * @param config.LIVEKIT_URL - Custom LiveKit RTC URL (defaults to wss://rtc.eu.tryhamsa.com)
+     * @param config.API_URL - Custom API endpoint URL (defaults to https://api.uae.tryhamsa.com)
+     * @param config.LIVEKIT_URL - Custom LiveKit RTC URL (defaults to wss://rtc.uae.tryhamsa.com)
      *
      * @example
      * ```typescript

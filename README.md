@@ -728,7 +728,7 @@ The SDK accepts optional configuration parameters:
 
 ```javascript
 const agent = new HamsaVoiceAgent("YOUR_API_KEY", {
-  API_URL: "https://api.tryhamsa.com", // API endpoint (default)
+  API_URL: "https://api.uae.tryhamsa.com", // API endpoint (default)
 });
 ```
 
