@@ -60,13 +60,36 @@ class HamsaApiError extends Error {
 }
 
 /**
+ * Supported deployment regions for the Hamsa platform.
+ * Determines the default API and LiveKit URLs used for the connection.
+ */
+export type Region = 'eu' | 'uae';
+
+/** Maps each region to its default API and LiveKit WebSocket URLs. */
+const REGION_CONFIG = {
+  eu: {
+    API_URL: 'https://api.tryhamsa.com',
+    LIVEKIT_URL: 'wss://rtc.eu.tryhamsa.com',
+  },
+  uae: {
+    API_URL: 'https://api.uae.tryhamsa.com',
+    LIVEKIT_URL: 'wss://rtc.uae.tryhamsa.com',
+  },
+} as const;
+
+/**
  * Configuration options for the HamsaVoiceAgent constructor
  * Allows customization of API endpoints and other global settings
  */
 type HamsaVoiceAgentConfig = {
-  /** Base URL for the Hamsa API. Defaults to 'https://api.tryhamsa.com' */
+  /**
+   * Deployment region for the Hamsa platform. Determines default API and LiveKit URLs.
+   * Defaults to 'eu'. Ignored when API_URL or LIVEKIT_URL are explicitly provided.
+   */
+  region?: Region;
+  /** Base URL for the Hamsa API. Overrides the region default when provided. */
   API_URL?: string;
-  /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
+  /** LiveKit RTC WebSocket URL. Overrides the region default when provided. */
   LIVEKIT_URL?: string;
   /** Enable debug logging for troubleshooting. Defaults to false */
   debug?: boolean;
@@ -483,15 +506,19 @@ class HamsaVoiceAgent extends EventEmitter {
    *
    * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com)
    * @param config - Optional configuration settings
-   * @param config.API_URL - Custom API endpoint URL (defaults to https://api.tryhamsa.com)
-   * @param config.LIVEKIT_URL - Custom LiveKit RTC URL (defaults to wss://rtc.eu.tryhamsa.com)
+   * @param config.region - Deployment region ('eu' | 'uae'). Defaults to 'eu'.
+   * @param config.API_URL - Custom API endpoint URL. Overrides the region default.
+   * @param config.LIVEKIT_URL - Custom LiveKit RTC URL. Overrides the region default.
    *
    * @example
    * ```typescript
-   * // Using default endpoints
+   * // Using default region (EU)
    * const agent = new HamsaVoiceAgent('hamsa_api_key_here');
    *
-   * // Using custom endpoints
+   * // Using UAE region
+   * const agent = new HamsaVoiceAgent('hamsa_api_key_here', { region: 'uae' });
+   *
+   * // Using custom endpoints (overrides region)
    * const agent = new HamsaVoiceAgent('hamsa_api_key_here', {
    *   API_URL: 'https://custom-api.example.com',
    *   LIVEKIT_URL: 'wss://custom-rtc.example.com'
@@ -503,16 +530,18 @@ class HamsaVoiceAgent extends EventEmitter {
   constructor(
     apiKey: string,
     {
-      API_URL = 'https://api.tryhamsa.com',
-      LIVEKIT_URL = 'wss://rtc.eu.tryhamsa.com',
+      region = 'eu',
+      API_URL,
+      LIVEKIT_URL,
       debug = false,
     }: HamsaVoiceAgentConfig = {}
   ) {
     super();
+    const regionDefaults = REGION_CONFIG[region];
     this.liveKitManager = null;
     this.apiKey = apiKey;
-    this.API_URL = API_URL;
-    this.LIVEKIT_URL = LIVEKIT_URL;
+    this.API_URL = API_URL ?? regionDefaults.API_URL;
+    this.LIVEKIT_URL = LIVEKIT_URL ?? regionDefaults.LIVEKIT_URL;
     this.debug = debug;
     this.logger = createDebugLogger(debug);
     this.jobId = null;
