@@ -35,6 +35,7 @@
 import { EventEmitter } from 'events';
 import type {
   ConnectionQuality,
+  LocalTrack,
   LocalTrackPublication,
   Participant,
   RemoteParticipant,
@@ -42,7 +43,7 @@ import type {
   RemoteTrackPublication,
   Room,
 } from 'livekit-client';
-import { RoomEvent } from 'livekit-client';
+import { RoomEvent, Track } from 'livekit-client';
 import { createDebugLogger, type DebugLogger } from '../utils';
 import { LiveKitAnalytics } from './livekit-analytics';
 import { LiveKitAudioManager } from './livekit-audio-manager';
@@ -100,6 +101,12 @@ export default class LiveKitManager extends EventEmitter {
   /** Debug logger instance for conditional logging */
   logger: DebugLogger;
 
+  /** CSS selector for the element where avatar video will be rendered */
+  avatarContainerSelector: string | undefined;
+
+  /** Video elements created for avatar tracks, tracked for cleanup */
+  videoElements: Set<HTMLVideoElement>;
+
   /**
    * Creates a new LiveKitManager instance
    *
@@ -128,13 +135,18 @@ export default class LiveKitManager extends EventEmitter {
     lkUrl: string,
     accessToken: string,
     tools: Tool[] = [],
-    debug = false
+    {
+      debug = false,
+      avatarContainerSelector,
+    }: { debug?: boolean; avatarContainerSelector?: string } = {}
   ) {
     super();
 
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
     this.logger = createDebugLogger(debug);
+    this.avatarContainerSelector = avatarContainerSelector;
+    this.videoElements = new Set();
 
     this.logger.log('Initializing LiveKitManager', {
       source: 'LiveKitManager',
@@ -146,6 +158,7 @@ export default class LiveKitManager extends EventEmitter {
     });
 
     // Initialize specialized modules with their specific responsibilities
+
     this.logger.log('Creating LiveKitConnection module', {
       source: 'LiveKitManager',
     });
@@ -154,18 +167,18 @@ export default class LiveKitManager extends EventEmitter {
     this.logger.log('Creating LiveKitAnalytics module', {
       source: 'LiveKitManager',
     });
-    this.analytics = new LiveKitAnalytics();
+    this.analytics = new LiveKitAnalytics(debug);
 
     this.logger.log('Creating LiveKitAudioManager module', {
       source: 'LiveKitManager',
     });
-    this.audioManager = new LiveKitAudioManager();
+    this.audioManager = new LiveKitAudioManager(debug);
 
     this.logger.log('Creating LiveKitToolRegistry module', {
       source: 'LiveKitManager',
       error: { toolsCount: tools.length },
     });
-    this.toolRegistry = new LiveKitToolRegistry(tools);
+    this.toolRegistry = new LiveKitToolRegistry(tools, debug);
 
     if (tools.length > 0) {
       this.logger.log('Registered client-side tools', {
@@ -188,12 +201,6 @@ export default class LiveKitManager extends EventEmitter {
       source: 'LiveKitManager',
     });
     this.#setupEventForwarding();
-
-    // Configure LiveKit room event handlers for WebRTC events
-    this.logger.log('Setting up room event handlers', {
-      source: 'LiveKitManager',
-    });
-    this.#setupRoomEventHandlers();
 
     this.logger.log('LiveKitManager initialization complete', {
       source: 'LiveKitManager',
@@ -1023,12 +1030,34 @@ export default class LiveKitManager extends EventEmitter {
 
     // === Tool and Data Events ===
     // Forward agent communication events for conversation tracking
-    this.toolRegistry.on('answerReceived', (answer) =>
-      this.emit('answerReceived', answer)
-    );
-    this.toolRegistry.on('transcriptionReceived', (transcription) =>
-      this.emit('transcriptionReceived', transcription)
-    );
+    this.toolRegistry.on('answerReceived', (answer) => {
+      const TEXT_PREVIEW_LENGTH = 100;
+      this.logger.log('🔄 Forwarding answerReceived to external listeners', {
+        source: 'LiveKitManager',
+        error: {
+          answerPreview: answer.substring(0, TEXT_PREVIEW_LENGTH),
+          answerLength: answer.length,
+        },
+      });
+      this.emit('answerReceived', answer);
+    });
+    this.toolRegistry.on('transcriptionReceived', (transcription) => {
+      const TEXT_PREVIEW_LENGTH = 100;
+      this.logger.log(
+        '🔄 Forwarding transcriptionReceived to external listeners',
+        {
+          source: 'LiveKitManager',
+          error: {
+            transcriptionPreview: transcription.substring(
+              0,
+              TEXT_PREVIEW_LENGTH
+            ),
+            transcriptionLength: transcription.length,
+          },
+        }
+      );
+      this.emit('transcriptionReceived', transcription);
+    });
 
     // Forward custom agent events for application-specific logic
     this.toolRegistry.on('customEvent', (eventType, eventData, metadata) =>
@@ -1044,8 +1073,12 @@ export default class LiveKitManager extends EventEmitter {
     // No need for stream-specific forwarding
 
     // Forward tool registration confirmations for debugging
-    this.toolRegistry.on('toolsRegistered', (count) =>
-      this.emit('toolsRegistered', count)
+    this.toolRegistry.on('toolsRegistered', (tools) =>
+      this.emit('toolsRegistered', tools)
+    );
+
+    this.toolRegistry.on('rpcError', (functionName, error) =>
+      this.emit('rpcError', functionName, error)
     );
   }
 
@@ -1098,6 +1131,11 @@ export default class LiveKitManager extends EventEmitter {
             publication,
             participant
           );
+
+          // Attach remote video tracks (avatar) to the configured container
+          if (track.kind === Track.Kind.Video) {
+            this.#attachAvatarVideo(track);
+          }
         },
       ],
       [
@@ -1123,16 +1161,22 @@ export default class LiveKitManager extends EventEmitter {
             publication,
             participant
           );
+
+          // Detach and remove avatar video elements when the track ends
+          if (track.kind === Track.Kind.Video) {
+            this.#detachAvatarVideo(track);
+          }
         },
       ],
       [
         RoomEvent.DataReceived,
         (payload: Uint8Array, participant?: RemoteParticipant) => {
-          this.logger.log('Data received from participant', {
+          this.logger.log('🔔 RoomEvent.DataReceived triggered', {
             source: 'LiveKitManager',
             error: {
               payloadSize: payload.length,
               participantIdentity: participant?.identity || 'unknown',
+              participantSid: participant?.sid,
             },
           });
 
@@ -1142,9 +1186,30 @@ export default class LiveKitManager extends EventEmitter {
       ],
       [
         RoomEvent.TranscriptionReceived,
-        (transcriptions: Array<{ text?: string; final?: boolean }>) => {
-          // Delegate transcription processing to tool registry
-          this.toolRegistry.handleTranscriptionReceived(transcriptions);
+        (
+          transcriptions: Array<{ text?: string; final?: boolean }>,
+          participant?: Participant
+        ) => {
+          const SEGMENT_PREVIEW_LENGTH = 50;
+          this.logger.log('🔔 RoomEvent.TranscriptionReceived triggered', {
+            source: 'LiveKitManager',
+            error: {
+              participantIdentity: participant?.identity || 'unknown',
+              participantSid: participant?.sid,
+              isLocal: participant?.isLocal,
+              segmentCount: transcriptions.length,
+              segments: transcriptions.map((s) => ({
+                text: s.text?.substring(0, SEGMENT_PREVIEW_LENGTH),
+                final: s.final,
+              })),
+            },
+          });
+
+          // Delegate transcription processing to tool registry with participant info
+          this.toolRegistry.handleTranscriptionReceived(
+            transcriptions,
+            participant?.identity
+          );
         },
       ],
       [
@@ -1210,6 +1275,39 @@ export default class LiveKitManager extends EventEmitter {
             publication,
             track: publication.track,
           });
+
+          // Delegate local audio track processing to audio manager
+          if (
+            publication.kind === Track.Kind.Audio &&
+            publication.track instanceof Track
+          ) {
+            this.audioManager.handleLocalTrackPublished(
+              publication.track as LocalTrack,
+              publication,
+              room.localParticipant
+            );
+          }
+        },
+      ],
+      [
+        RoomEvent.LocalTrackUnpublished,
+        (publication: LocalTrackPublication) => {
+          this.logger.log('Local track unpublished', {
+            source: 'LiveKitManager',
+            error: {
+              trackSid: publication.trackSid,
+              trackKind: publication.kind,
+            },
+          });
+
+          // Delegate local audio track cleanup to audio manager
+          if (publication.kind === Track.Kind.Audio && publication.track) {
+            this.audioManager.handleLocalTrackUnsubscribed(
+              publication.track as LocalTrack, // LocalTrack inherits from Track/RemoteTrack in terms of cleanup needs
+              publication,
+              room.localParticipant
+            );
+          }
         },
       ],
     ];
@@ -1218,6 +1316,56 @@ export default class LiveKitManager extends EventEmitter {
     for (const [event, handler] of eventHandlers) {
       // biome-ignore lint/suspicious/noExplicitAny: Room event handling requires flexible typing for different handler signatures
       room.on(event as any, handler);
+    }
+  }
+
+  /**
+   * Attaches a remote video track to the configured avatar container element
+   * @private
+   */
+  #attachAvatarVideo(track: RemoteTrack): void {
+    if (!this.avatarContainerSelector) {
+      return;
+    }
+
+    const container = document.querySelector(this.avatarContainerSelector);
+    if (!container) {
+      this.logger.warn('Avatar container element not found', {
+        source: 'LiveKitManager',
+        error: { selector: this.avatarContainerSelector },
+      });
+      return;
+    }
+
+    const mediaEl = track.attach();
+    if (!(mediaEl instanceof HTMLVideoElement)) {
+      return;
+    }
+
+    mediaEl.autoplay = true;
+    mediaEl.playsInline = true;
+    mediaEl.style.width = '100%';
+    mediaEl.style.height = '100%';
+    mediaEl.style.objectFit = 'cover';
+    container.appendChild(mediaEl);
+    this.videoElements.add(mediaEl);
+
+    this.logger.log('Avatar video attached to container', {
+      source: 'LiveKitManager',
+      error: { selector: this.avatarContainerSelector, trackSid: track.sid },
+    });
+  }
+
+  /**
+   * Detaches and removes video elements for a given remote video track
+   * @private
+   */
+  #detachAvatarVideo(track: RemoteTrack): void {
+    for (const el of track.detach()) {
+      if (el instanceof HTMLVideoElement) {
+        el.remove();
+        this.videoElements.delete(el);
+      }
     }
   }
 
@@ -1276,5 +1424,11 @@ export default class LiveKitManager extends EventEmitter {
     this.audioManager.cleanup();
     this.analytics.cleanup();
     this.toolRegistry.cleanup();
+
+    // Remove any lingering avatar video elements from the DOM
+    for (const el of this.videoElements) {
+      el.remove();
+    }
+    this.videoElements.clear();
   }
 }

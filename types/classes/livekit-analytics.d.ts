@@ -182,6 +182,8 @@ export declare class LiveKitAnalytics extends EventEmitter {
     private lastUserInputTime;
     /** Previous connection quality for jitter change detection (internal) */
     private previousConnectionQuality;
+    /** Debug logger instance for conditional logging */
+    private readonly logger;
     /**
      * Creates a new LiveKitAnalytics instance
      *
@@ -203,7 +205,7 @@ export declare class LiveKitAnalytics extends EventEmitter {
      * analytics.startAnalyticsCollection();
      * ```
      */
-    constructor();
+    constructor(debug?: boolean);
     /**
      * Sets the LiveKit room reference for analytics data collection
      *

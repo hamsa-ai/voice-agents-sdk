@@ -1,6 +1,6 @@
 {
   "name": "@hamsa-ai/voice-agents-sdk",
-  "version": "0.4.6",
+  "version": "0.5.8",
   "description": "Hamsa AI - Voice Agents JavaScript SDK",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -38,7 +38,7 @@
     "@biomejs/biome": "^2.2.0",
     "@rollup/plugin-commonjs": "^28.0.6",
     "@rollup/plugin-node-resolve": "^16.0.1",
-    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.1.4",
     "@types/jest": "^30.0.0",
     "babel-jest": "^29.7.0",
@@ -55,12 +55,12 @@
   },
   "dependencies": {
     "events": "^3.3.0",
-    "livekit-client": "^2.15.4",
-    "jwt-decode": "^4.0.0"
+    "jwt-decode": "^4.0.0",
+    "livekit-client": "^2.18.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hamsa-ai/voice-agents-sdk.git"
+    "url": "git+https://github.com/hamsa-ai/voice-agents-sdk.git"
   },
   "keywords": [
     "arab",

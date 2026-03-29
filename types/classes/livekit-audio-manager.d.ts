@@ -154,7 +154,7 @@
  * - Manages DOM element lifecycle to prevent memory leaks
  */
 import { EventEmitter } from 'events';
-import { type RemoteParticipant, type RemoteTrack, type RemoteTrackPublication, type Room } from 'livekit-client';
+import { type LocalTrack, type LocalTrackPublication, type Participant, type RemoteParticipant, type RemoteTrack, type RemoteTrackPublication, type Room, Track, type TrackPublication } from 'livekit-client';
 import type { AudioCaptureOptions, TrackStatsData, TrackStatsResult } from './types';
 /**
  * LiveKitAudioManager class for comprehensive audio stream management
@@ -181,8 +181,14 @@ export declare class LiveKitAudioManager extends EventEmitter {
     private audioCaptureOptions;
     private readonly recorders;
     private readonly processors;
+    private readonly sourceNodes;
+    /** Map of track IDs to cloned MediaStreamTracks for capture */
+    private readonly clonedTracks;
     /** Map of track IDs to their capture state */
     private readonly trackCaptureMap;
+    /** Debug logger instance for conditional logging */
+    private readonly logger;
+    constructor(debug?: boolean);
     /**
      * Provides the LiveKit Room to the audio manager for microphone control.
      */
@@ -460,6 +466,13 @@ export declare class LiveKitAudioManager extends EventEmitter {
      */
     handleTrackSubscribed(track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant): void;
     /**
+     * Processes local audio track publications
+     * @param track - The local audio track
+     * @param publication - Local track publication metadata
+     * @param participant - The local participant who published the track
+     */
+    handleLocalTrackPublished(track: LocalTrack, publication: LocalTrackPublication, participant: Participant): void;
+    /**
      * Processes audio track unsubscription and cleanup
      *
      * Handles the complete cleanup process when audio tracks from voice agents
@@ -495,7 +508,14 @@ export declare class LiveKitAudioManager extends EventEmitter {
      * });
      * ```
      */
-    handleTrackUnsubscribed(track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant): void;
+    handleTrackUnsubscribed(track: Track, publication: TrackPublication, participant: Participant): void;
+    /**
+     * Processes local audio track unpublications
+     * @param track - The local audio track
+     * @param publication - Local track publication metadata
+     * @param participant - The local participant who unpublished the track
+     */
+    handleLocalTrackUnsubscribed(track: LocalTrack, publication: LocalTrackPublication, participant: Participant): void;
     /**
      * Pauses playback of all active audio streams
      *
@@ -780,6 +800,11 @@ export declare class LiveKitAudioManager extends EventEmitter {
      * ```
      */
     enableAudioCapture(options: AudioCaptureOptions): void;
+    /**
+     * Internal state for AudioWorklet registration to prevent race conditions
+     * @private
+     */
+    private workletReady;
     /**
      * Disables audio capture and cleans up all capture resources
      *

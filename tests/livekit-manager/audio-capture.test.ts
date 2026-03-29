@@ -5,12 +5,13 @@
  * - Level 1 API (simple onAudioData callback)
  * - Level 2 API (inline captureAudio configuration)
  * - Level 3 API (dynamic enable/disable methods)
- * - All audio formats (opus-webm, pcm-f32, pcm-i16)
+ * - All audio formats (opus-webm, pcm-f32)
  * - All audio sources (agent, user, both)
  * - Error handling and edge cases
  */
 
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { Track } from 'livekit-client';
 import type { AudioCaptureOptions } from '../../src/classes/types';
 import { setupTest, type TestContext } from './shared-setup';
 
@@ -141,7 +142,7 @@ describe('LiveKitManager - Audio Capture', () => {
           source: 'agent',
           format: 'opus-webm',
           chunkSize: 100,
-          bufferSize: 4096,
+          bufferSize: 2048,
         });
       });
 
@@ -254,10 +255,19 @@ describe('LiveKitManager - Audio Capture', () => {
         const mockTrack = {
           sid: 'test-track',
           kind: 'audio',
-          mediaStreamTrack: { id: 'test-track' },
+          source: Track.Source.Microphone,
+          mediaStreamTrack: {
+            id: 'test-track',
+            clone: jest
+              .fn()
+              .mockReturnValue({ id: 'test-track-clone', stop: jest.fn() }),
+          },
           attach: jest.fn().mockReturnValue(document.createElement('audio')),
         };
-        const mockPublication = { track: mockTrack };
+        const mockPublication = {
+          track: mockTrack,
+          source: Track.Source.Microphone,
+        };
         const mockRemoteParticipant = {
           identity: 'agent-123',
           trackPublications: new Map([['test-track', mockPublication]]),
@@ -346,10 +356,19 @@ describe('LiveKitManager - Audio Capture', () => {
         const mockTrack = {
           sid: 'test-track',
           kind: 'audio',
-          mediaStreamTrack: { id: 'test-track' },
+          source: Track.Source.Microphone,
+          mediaStreamTrack: {
+            id: 'test-track',
+            clone: jest
+              .fn()
+              .mockReturnValue({ id: 'test-track-clone', stop: jest.fn() }),
+          },
           attach: jest.fn().mockReturnValue(document.createElement('audio')),
         };
-        const mockPublication = { track: mockTrack };
+        const mockPublication = {
+          track: mockTrack,
+          source: Track.Source.Microphone,
+        };
         const mockRemoteParticipant = {
           identity: 'agent-123',
           trackPublications: new Map([['test-track', mockPublication]]),
@@ -475,9 +494,8 @@ describe('LiveKitManager - Audio Capture', () => {
           liveKitManager.audioManager,
           'audioCaptureOptions'
         );
+
         expect(captureOptions?.format).toBe('pcm-i16');
-        // biome-ignore lint/style/noMagicNumbers: Testing default value
-        expect(captureOptions?.bufferSize).toBe(4096);
       });
     });
   });

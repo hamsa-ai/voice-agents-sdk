@@ -64,6 +64,7 @@ describe('HamsaVoiceAgent', () => {
       expect(typeof voiceAgent.resume).toBe('function');
       expect(typeof voiceAgent.setVolume).toBe('function');
       expect(typeof voiceAgent.getJobDetails).toBe('function');
+      expect(typeof voiceAgent.getJobId).toBe('function');
     });
 
     test('start method should accept correct parameters', async () => {
@@ -208,6 +209,69 @@ describe('HamsaVoiceAgent', () => {
     });
   });
 
+  describe('Job ID Access', () => {
+    test('getJobId should return null before connection', () => {
+      expect(voiceAgent.getJobId()).toBeNull();
+    });
+
+    test('getJobId should return jobId after successful start', async () => {
+      const wakeLockMocks = createWakeLockMocks();
+      applyWakeLockMocks(voiceAgent, wakeLockMocks);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+        tools: [],
+      });
+
+      const jobId = voiceAgent.getJobId();
+      expect(jobId).toBe('mock-job-id');
+    });
+
+    test('callStarted event should include jobId in data object', async () => {
+      const callStartedSpy = jest.fn();
+      voiceAgent.on('callStarted', callStartedSpy);
+
+      const wakeLockMocks = createWakeLockMocks();
+      applyWakeLockMocks(voiceAgent, wakeLockMocks);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+        tools: [],
+      });
+
+      expect(callStartedSpy).toHaveBeenCalledWith({
+        jobId: 'mock-job-id',
+      });
+    });
+
+    test('jobId should be accessible via both getter and event', async () => {
+      let eventJobId: string | null = null;
+      voiceAgent.on('callStarted', ({ jobId }) => {
+        eventJobId = jobId;
+      });
+
+      const wakeLockMocks = createWakeLockMocks();
+      applyWakeLockMocks(voiceAgent, wakeLockMocks);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+        tools: [],
+      });
+
+      const getterJobId = voiceAgent.getJobId();
+
+      expect(eventJobId).toBe('mock-job-id');
+      expect(getterJobId).toBe('mock-job-id');
+      expect(eventJobId).toBe(getterJobId);
+    });
+  });
+
   describe('Tool Conversion', () => {
     test('should convert tools to LLM format correctly', async () => {
       const tools = [
@@ -334,7 +398,9 @@ describe('HamsaVoiceAgent', () => {
         tools: [],
       });
 
-      expect(events.callStarted).toHaveBeenCalled();
+      expect(events.callStarted).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: expect.any(String) })
+      );
 
       // Test that LiveKitManager events are forwarded correctly
       if (voiceAgent.liveKitManager) {
@@ -907,7 +973,7 @@ describe('HamsaVoiceAgent', () => {
       );
 
       // Simulate how a developer might use messageKey for i18n
-      const i18nMapping = {
+      const i18nMapping: Record<string, string> = {
         AUTH_INVALID_KEY: 'Clé API invalide',
         RATE_LIMIT_EXCEEDED: 'Limite de débit dépassée',
       };

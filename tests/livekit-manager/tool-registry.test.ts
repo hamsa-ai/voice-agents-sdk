@@ -117,7 +117,7 @@ describe('LiveKitManager - Tool Registry', () => {
 
       const result = await rpcHandler(rpcData);
 
-      expect(mockTool.fn).toHaveBeenCalledWith('value1', 'value2');
+      expect(mockTool.fn).toHaveBeenCalledWith('value1', 'value2', rpcData);
       expect(result).toBe(
         JSON.stringify({ success: true, data: 'test result' })
       );
@@ -186,7 +186,7 @@ describe('LiveKitManager - Tool Registry', () => {
 
       const result = await rpcHandler(rpcData);
 
-      expect(mockTool.fn).toHaveBeenCalledWith();
+      expect(mockTool.fn).toHaveBeenCalledWith(rpcData);
       expect(result).toBe(JSON.stringify('result'));
     });
 
@@ -227,7 +227,8 @@ describe('LiveKitManager - Tool Registry', () => {
         TEST_NUMBER,
         true,
         { nested: 'value' },
-        TEST_ARRAY
+        TEST_ARRAY,
+        rpcData
       );
       expect(result).toBe(JSON.stringify({ processed: true }));
     });
@@ -319,6 +320,46 @@ describe('LiveKitManager - Tool Registry', () => {
 
       expect(mockRoom.registerRpcMethod).toHaveBeenCalledWith(
         'lifecycleTool',
+        expect.any(Function)
+      );
+    });
+
+    test('should unregister existing tools before re-registering', () => {
+      const { liveKitManager, mockRoom } = context;
+      const initialTools = [
+        {
+          function_name: 'tool1',
+          fn: jest.fn().mockResolvedValue('result1'),
+        },
+        {
+          function_name: 'tool2',
+          fn: jest.fn().mockResolvedValue('result2'),
+        },
+      ];
+
+      // Register initial tools
+      liveKitManager.registerTools(initialTools);
+
+      // Clear mocks to track subsequent calls
+      jest.clearAllMocks();
+
+      const newTools = [
+        {
+          function_name: 'tool3',
+          fn: jest.fn().mockResolvedValue('result3'),
+        },
+      ];
+
+      // Re-register with new tools
+      liveKitManager.registerTools(newTools);
+
+      // Should have unregistered the old tools
+      expect(mockRoom.unregisterRpcMethod).toHaveBeenCalledWith('tool1');
+      expect(mockRoom.unregisterRpcMethod).toHaveBeenCalledWith('tool2');
+
+      // Should have registered the new tool
+      expect(mockRoom.registerRpcMethod).toHaveBeenCalledWith(
+        'tool3',
         expect.any(Function)
       );
     });

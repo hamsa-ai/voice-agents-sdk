@@ -26,7 +26,7 @@ const CUSTOM_BUFFER_SIZE = 16_384;
 
 // Regex patterns for validation
 const SOURCE_PATTERN = /^(agent|user)$/;
-const FORMAT_PATTERN = /^(opus-webm|pcm-f32|pcm-i16)$/;
+const FORMAT_PATTERN = /^(opus-webm|pcm-f32)$/;
 
 // Helper to access private properties in tests
 function getPrivateProperty<T>(obj: any, prop: string): T {
@@ -208,11 +208,7 @@ describe('HamsaVoiceAgent - Audio Capture Integration', () => {
     });
 
     test('should support all format options in captureAudio', async () => {
-      const formats: Array<'opus-webm' | 'pcm-f32' | 'pcm-i16'> = [
-        'opus-webm',
-        'pcm-f32',
-        'pcm-i16',
-      ];
+      const formats: Array<'opus-webm' | 'pcm-f32'> = ['opus-webm', 'pcm-f32'];
 
       for (const format of formats) {
         const onData = jest.fn();

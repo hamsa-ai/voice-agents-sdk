@@ -179,7 +179,8 @@
  */
 
 import { EventEmitter } from 'events';
-import type { Room } from 'livekit-client';
+import type { Room, RpcInvocationData } from 'livekit-client';
+import { createDebugLogger, type DebugLogger } from '../utils';
 import type { Tool } from './types';
 
 /**
@@ -189,11 +190,22 @@ import type { Tool } from './types';
  * agent responses, transcriptions, and custom events from voice agents.
  */
 export class LiveKitToolRegistry extends EventEmitter {
+  /** Maximum length for text preview in debug logs */
+  private static readonly TEXT_PREVIEW_LENGTH = 100;
+  /** Maximum length for decoded payload preview in debug logs */
+  private static readonly PAYLOAD_PREVIEW_LENGTH = 200;
+
   /** Reference to the LiveKit room for RPC method registration */
   private room: Room | null = null;
 
   /** Array of client-side tools available for agent execution */
   private tools: Tool[] = [];
+
+  /** Set of currently registered RPC method names for cleanup */
+  private readonly registeredMethods: Set<string> = new Set();
+
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
 
   /**
    * Creates a new LiveKitToolRegistry instance
@@ -203,6 +215,7 @@ export class LiveKitToolRegistry extends EventEmitter {
    * added later using setTools() or updated dynamically based on context.
    *
    * @param tools - Initial array of tools to register (optional)
+   * @param debug - Enable debug logging for troubleshooting (optional)
    *
    * @example
    * ```typescript
@@ -220,9 +233,10 @@ export class LiveKitToolRegistry extends EventEmitter {
    * registry.setRoom(liveKitRoom);
    * ```
    */
-  constructor(tools: Tool[] = []) {
+  constructor(tools: Tool[] = [], debug = false) {
     super();
     this.tools = tools;
+    this.logger = createDebugLogger(debug);
   }
 
   /**
@@ -314,7 +328,8 @@ export class LiveKitToolRegistry extends EventEmitter {
    * wrapped with error handling and JSON serialization for secure, reliable
    * execution. Registration only occurs when both room and tools are available.
    *
-   * @fires toolsRegistered When tools are successfully registered with count
+   * @fires toolsRegistered When tools are successfully registered with the list of tools
+   * @fires rpcError When a tool execution fails
    *
    * @example
    * ```typescript
@@ -322,14 +337,14 @@ export class LiveKitToolRegistry extends EventEmitter {
    * registry.registerTools();
    *
    * // Listen for registration confirmation
-   * registry.on('toolsRegistered', (count) => {
-   *   console.log(`${count} tools registered successfully`);
+   * registry.on('toolsRegistered', (tools) => {
+   *   console.log(`${tools.length} tools registered successfully`);
    *
    *   // Notify agent about available tools
    *   sendAgentMessage({
    *     type: 'tools_ready',
-   *     count: count,
-   *     tools: registry.getTools().map(t => ({
+   *     count: tools.length,
+   *     tools: tools.map(t => ({
    *       name: t.function_name,
    *       description: t.description
    *     }))
@@ -341,7 +356,7 @@ export class LiveKitToolRegistry extends EventEmitter {
    * 1. Validates tool structure (function_name, fn)
    * 2. Creates RPC method wrapper with error handling
    * 3. Registers with LiveKit room's local participant
-   * 4. Emits toolsRegistered event with count
+   * 4. Emits toolsRegistered event with tools list
    * 5. Tools become immediately available for agent calls
    */
   registerTools(): void {
@@ -349,22 +364,61 @@ export class LiveKitToolRegistry extends EventEmitter {
       return;
     }
 
+    // Unregister previously registered methods to avoid duplicates
+    this.unregisterAllTools();
+
     for (const tool of this.tools) {
       if (tool.function_name && typeof tool.fn === 'function') {
-        this.room?.registerRpcMethod(tool.function_name, async (data) => {
-          try {
-            const args = JSON.parse(data.payload || '{}');
-            const result = await tool.fn?.(...Object.values(args));
-            return JSON.stringify(result);
-          } catch (error) {
-            return JSON.stringify({
-              error: error instanceof Error ? error.message : String(error),
-            });
+        this.room.registerRpcMethod(
+          tool.function_name,
+          async (data: RpcInvocationData) => {
+            try {
+              const args = JSON.parse(data.payload || '{}');
+              const result = await tool.fn?.(...Object.values(args), data);
+              return JSON.stringify(result);
+            } catch (error) {
+              this.emit('rpcError', tool.function_name, error);
+              return JSON.stringify({
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
-        });
+        );
+        this.registeredMethods.add(tool.function_name);
       }
     }
-    this.emit('toolsRegistered', this.tools.length);
+    this.emit('toolsRegistered', this.tools);
+  }
+
+  /**
+   * Unregisters all currently registered RPC methods
+   *
+   * Removes all tool RPC handlers from the LiveKit room.
+   * This is called automatically before re-registering tools to prevent
+   * duplicate registration errors.
+   *
+   * @example
+   * ```typescript
+   * // Manually unregister all tools
+   * registry.unregisterAllTools();
+   *
+   * // Tools are no longer available to the agent
+   * console.log('All tools unregistered');
+   * ```
+   */
+  unregisterAllTools(): void {
+    if (!this.room) {
+      return;
+    }
+
+    for (const methodName of this.registeredMethods) {
+      try {
+        this.room.unregisterRpcMethod(methodName);
+      } catch {
+        // Ignore errors during unregistration (method may not exist)
+      }
+    }
+    this.registeredMethods.clear();
   }
 
   /**
@@ -431,19 +485,89 @@ export class LiveKitToolRegistry extends EventEmitter {
    */
   handleDataReceived(payload: Uint8Array, participant?: string): void {
     try {
-      const message = JSON.parse(new TextDecoder().decode(payload));
+      const decodedText = new TextDecoder().decode(payload);
+      this.logger.log('📦 Data received from participant', {
+        source: 'LiveKitToolRegistry',
+        error: {
+          participant: participant || 'unknown',
+          payloadLength: payload.length,
+          decodedText: decodedText.substring(
+            0,
+            LiveKitToolRegistry.PAYLOAD_PREVIEW_LENGTH
+          ),
+        },
+      });
+
+      const message = JSON.parse(decodedText);
       const eventType = message.event;
       const eventData = message.content || message.data || message;
+
+      this.logger.log('📨 Parsed message structure', {
+        source: 'LiveKitToolRegistry',
+        error: {
+          eventType,
+          hasContent: !!message.content,
+          hasData: !!message.data,
+          contentType: typeof eventData,
+          contentPreview:
+            typeof eventData === 'string'
+              ? eventData.substring(0, LiveKitToolRegistry.TEXT_PREVIEW_LENGTH)
+              : JSON.stringify(eventData).substring(
+                  0,
+                  LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+                ),
+        },
+      });
 
       // Emit specific events
       switch (eventType) {
         case 'answer':
+          this.logger.log('✅ Emitting answerReceived event', {
+            source: 'LiveKitToolRegistry',
+            error: {
+              eventData: eventData.substring(
+                0,
+                LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+              ),
+              participant,
+            },
+          });
           this.emit('answerReceived', eventData);
           break;
         case 'transcription':
+          this.logger.log(
+            '✅ Emitting transcriptionReceived event (from data)',
+            {
+              source: 'LiveKitToolRegistry',
+              error: {
+                eventData: eventData.substring(
+                  0,
+                  LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+                ),
+                participant,
+              },
+            }
+          );
           this.emit('transcriptionReceived', eventData);
           break;
         default:
+          this.logger.log('⚡ Emitting customEvent', {
+            source: 'LiveKitToolRegistry',
+            error: {
+              eventType,
+              eventData:
+                typeof eventData === 'string'
+                  ? eventData.substring(
+                      0,
+                      LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+                    )
+                  : JSON.stringify(eventData).substring(
+                      0,
+                      LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+                    ),
+              participant,
+            },
+          });
           // Emit custom event for unknown event types
           this.emit('customEvent', eventType, eventData, {
             timestamp: Date.now(),
@@ -455,7 +579,15 @@ export class LiveKitToolRegistry extends EventEmitter {
 
       // Emit raw data received event
       this.emit('dataReceived', message, participant || 'unknown');
-    } catch (_error) {
+    } catch (error) {
+      this.logger.error('❌ Error parsing data received', {
+        source: 'LiveKitToolRegistry',
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          participant,
+          payloadLength: payload.length,
+        },
+      });
       // Intentionally ignore errors during data processing
     }
   }
@@ -464,48 +596,42 @@ export class LiveKitToolRegistry extends EventEmitter {
    * Processes real-time transcription data from LiveKit's speech-to-text system
    *
    * Handles transcription segments received from LiveKit's built-in speech recognition,
-   * extracting text content and emitting structured transcription events. This method
-   * processes both partial and final transcription segments, enabling real-time
-   * speech-to-text display and conversation logging.
+   * extracting text content and routing to the appropriate event based on the participant.
+   * This method intelligently differentiates between agent and user speech:
+   *
+   * - **Agent speech** → Emits `answerReceived` event
+   * - **User speech** → Emits `transcriptionReceived` event
+   *
+   * The participant is identified by checking if their identity contains "agent".
    *
    * @param transcriptions - Array of transcription segments from LiveKit
    * @param transcriptions[].text - Transcribed text content
    * @param transcriptions[].final - Whether this is a final transcription segment
+   * @param participantIdentity - Identity of the participant who spoke (optional)
    *
-   * @fires transcriptionReceived When valid text content is extracted
+   * @fires answerReceived When agent speech is transcribed
+   * @fires transcriptionReceived When user speech is transcribed
    *
    * @example
    * ```typescript
    * // This method is called automatically by LiveKitManager
    * // when RoomEvent.TranscriptionReceived is triggered
    *
-   * // Listen for transcription updates
+   * // Listen for USER transcriptions
    * registry.on('transcriptionReceived', (text) => {
-   *   console.log('Transcription:', text);
-   *
-   *   // Update real-time transcript display
-   *   updateTranscriptDisplay(text);
-   *
-   *   // Log conversation for analytics
-   *   conversationLogger.logUserSpeech(text, Date.now());
-   *
-   *   // Trigger intent recognition
-   *   if (text.length > 10) {
-   *     intentRecognizer.analyze(text);
-   *   }
+   *   console.log('USER said:', text);
+   *   updateUserMessage(text);
    * });
    *
-   * // Handle transcription processing
-   * let transcriptBuffer = '';
-   * registry.on('transcriptionReceived', (text) => {
-   *   transcriptBuffer += text + ' ';
-   *
-   *   // Process complete sentences
-   *   if (text.endsWith('.') || text.endsWith('?') || text.endsWith('!')) {
-   *     processCompleteSentence(transcriptBuffer.trim());
-   *     transcriptBuffer = '';
-   *   }
+   * // Listen for AGENT responses
+   * registry.on('answerReceived', (text) => {
+   *   console.log('AGENT said:', text);
+   *   updateAgentMessage(text);
    * });
+   *
+   * // The routing happens automatically based on participant identity:
+   * // - If participant.identity includes "agent" → answerReceived
+   * // - Otherwise → transcriptionReceived
    * ```
    *
    * LiveKit Transcription Format:
@@ -518,17 +644,85 @@ export class LiveKitToolRegistry extends EventEmitter {
    * ```
    */
   handleTranscriptionReceived(
-    transcriptions: Array<{ text?: string; final?: boolean }>
+    transcriptions: Array<{ text?: string; final?: boolean }>,
+    participantIdentity?: string
   ): void {
     try {
+      this.logger.log('🎤 Transcription received from LiveKit', {
+        source: 'LiveKitToolRegistry',
+        error: {
+          participantIdentity: participantIdentity || 'unknown',
+          segmentCount: transcriptions.length,
+          segments: transcriptions.map((s) => ({
+            text: s.text?.substring(0, LiveKitToolRegistry.TEXT_PREVIEW_LENGTH),
+            final: s.final,
+            textLength: s.text?.length,
+          })),
+        },
+      });
+
+      // Determine if this is from an agent or user based on participant identity
+      const isAgent =
+        participantIdentity?.toLowerCase().includes('agent') ?? false;
+
+      this.logger.log('🔍 Participant type detected', {
+        source: 'LiveKitToolRegistry',
+        error: {
+          participantIdentity,
+          isAgent,
+          willEmit: isAgent ? 'answerReceived' : 'transcriptionReceived',
+        },
+      });
+
       // LiveKit transcriptions come as an array of segments
       // Each segment has properties like text, final, etc.
       for (const segment of transcriptions) {
         if (segment.text) {
-          this.emit('transcriptionReceived', segment.text);
+          if (isAgent) {
+            // Agent transcription → emit as answerReceived
+            this.logger.log('✅ Emitting answerReceived event (from LiveKit)', {
+              source: 'LiveKitToolRegistry',
+              error: {
+                text: segment.text.substring(
+                  0,
+                  LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+                ),
+                final: segment.final,
+                textLength: segment.text.length,
+                participant: participantIdentity,
+              },
+            });
+            this.emit('answerReceived', segment.text);
+          } else {
+            // User transcription → emit as transcriptionReceived
+            this.logger.log(
+              '✅ Emitting transcriptionReceived event (from LiveKit)',
+              {
+                source: 'LiveKitToolRegistry',
+                error: {
+                  text: segment.text.substring(
+                    0,
+                    LiveKitToolRegistry.TEXT_PREVIEW_LENGTH
+                  ),
+                  final: segment.final,
+                  textLength: segment.text.length,
+                  participant: participantIdentity,
+                },
+              }
+            );
+            this.emit('transcriptionReceived', segment.text);
+          }
         }
       }
-    } catch {
+    } catch (error) {
+      this.logger.error('❌ Error processing transcription', {
+        source: 'LiveKitToolRegistry',
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          transcriptionsCount: transcriptions.length,
+          participant: participantIdentity,
+        },
+      });
       // Ignore transcription processing errors
     }
   }

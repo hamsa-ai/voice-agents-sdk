@@ -157,12 +157,16 @@
 import { EventEmitter } from 'events';
 import {
   type LocalTrack,
+  type LocalTrackPublication,
+  type Participant,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
   type Room,
   Track,
+  type TrackPublication,
 } from 'livekit-client';
+import { createDebugLogger, type DebugLogger } from '../utils/debug';
 import type {
   AudioCaptureFormat,
   AudioCaptureMetadata,
@@ -191,18 +195,15 @@ const BYTE_MAX = 255;
 // Audio capture configuration constants
 /** Default chunk size for encoded audio capture (milliseconds) */
 const DEFAULT_CHUNK_SIZE = 100;
-/** Default buffer size for PCM audio capture (samples) */
-const DEFAULT_BUFFER_SIZE = 4096;
+/** Default buffer size for PCM audio capture (samples) - balanced for stability (2048 samp @ 16k = 128ms) */
+const DEFAULT_BUFFER_SIZE = 2048;
 /** Default audio capture format */
 const DEFAULT_AUDIO_FORMAT: AudioCaptureFormat = 'opus-webm';
+const DEFAULT_PCM_BUFFER_SIZE = 4096;
+/** Scaling factor for converting Float32 audio samples (-1.0 to 1.0) to Int16 (-32768 to 32767) */
+const INT16_SCALE = 32_767;
 
-// PCM conversion constants
-/** Minimum value for 16-bit signed integer */
-const INT16_MIN = -32_768;
-/** Maximum value for 16-bit signed integer */
-const INT16_MAX = 32_767;
-/** Scale factor for converting float32 to int16 */
-const INT16_SCALE = 32_768;
+// PCM conversion constants (Reserved for future internal scaling if needed)
 
 /**
  * LiveKitAudioManager class for comprehensive audio stream management
@@ -234,12 +235,24 @@ export class LiveKitAudioManager extends EventEmitter {
   private audioCaptureEnabled = false;
   private audioCaptureOptions: AudioCaptureOptions | null = null;
   private readonly recorders: Map<string, MediaRecorder> = new Map();
-  private readonly processors: Map<string, ScriptProcessorNode> = new Map();
+  private readonly processors: Map<string, AudioNode> = new Map();
+  private readonly sourceNodes: Map<string, MediaStreamAudioSourceNode> =
+    new Map();
+  /** Map of track IDs to cloned MediaStreamTracks for capture */
+  private readonly clonedTracks: Map<string, MediaStreamTrack> = new Map();
   /** Map of track IDs to their capture state */
   private readonly trackCaptureMap: Map<
     string,
     { participant: string; source: 'agent' | 'user' }
   > = new Map();
+
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
+
+  constructor(debug = false) {
+    super();
+    this.logger = createDebugLogger(debug);
+  }
 
   /**
    * Provides the LiveKit Room to the audio manager for microphone control.
@@ -715,6 +728,24 @@ export class LiveKitAudioManager extends EventEmitter {
     if (track.kind === Track.Kind.Audio) {
       this.#recordTrackStats(track, publication, participant);
       this.#setupAudioElement(track, publication, participant);
+      this.#setupAudioCaptureIfEnabled(track, participant);
+    }
+  }
+
+  /**
+   * Processes local audio track publications
+   * @param track - The local audio track
+   * @param publication - Local track publication metadata
+   * @param participant - The local participant who published the track
+   */
+  handleLocalTrackPublished(
+    track: LocalTrack,
+    publication: LocalTrackPublication,
+    participant: Participant
+  ): void {
+    if (track.kind === Track.Kind.Audio) {
+      this.#recordTrackStats(track, publication, participant);
+      this.#setupAudioCaptureIfEnabled(track, participant);
     }
   }
 
@@ -723,9 +754,9 @@ export class LiveKitAudioManager extends EventEmitter {
    * @private
    */
   #recordTrackStats(
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    track: Track,
+    publication: TrackPublication,
+    participant: Participant
   ): void {
     this.trackStats.set(track.sid || track.mediaStreamTrack?.id || 'unknown', {
       trackId: track.sid || track.mediaStreamTrack?.id || 'unknown',
@@ -771,9 +802,9 @@ export class LiveKitAudioManager extends EventEmitter {
    * @private
    */
   #emitTrackSubscribed(
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    track: Track,
+    publication: TrackPublication,
+    participant: Participant
   ): void {
     const subscriptionData: TrackSubscriptionData = {
       track,
@@ -803,10 +834,7 @@ export class LiveKitAudioManager extends EventEmitter {
    * Sets up audio capture if enabled for this track
    * @private
    */
-  #setupAudioCaptureIfEnabled(
-    track: RemoteTrack,
-    participant: RemoteParticipant
-  ): void {
+  #setupAudioCaptureIfEnabled(track: Track, participant: Participant): void {
     if (!(this.audioCaptureEnabled && this.audioCaptureOptions)) {
       return;
     }
@@ -816,9 +844,23 @@ export class LiveKitAudioManager extends EventEmitter {
       .toLowerCase()
       .includes('agent');
     const trackSource: 'agent' | 'user' = isAgent ? 'agent' : 'user';
-    const { source, format } = this.audioCaptureOptions;
+    const { source, format, trackSourceFilter } = this.audioCaptureOptions;
 
-    if ((source === 'both' || source === trackSource) && format) {
+    // Check if we should capture this participant's source
+    if (source !== 'both' && source !== trackSource) {
+      return;
+    }
+
+    // Check if we should capture this specific track source
+    const actualTrackSource = this.#getTrackSourceString(track.source);
+    if (
+      trackSourceFilter !== 'all' &&
+      trackSourceFilter !== actualTrackSource
+    ) {
+      return;
+    }
+
+    if (format) {
       this.#setupTrackCapture(
         trackId,
         participant.identity || 'unknown',
@@ -865,38 +907,70 @@ export class LiveKitAudioManager extends EventEmitter {
    * ```
    */
   handleTrackUnsubscribed(
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    track: Track,
+    publication: TrackPublication,
+    participant: Participant
   ): void {
-    if (track.kind === Track.Kind.Audio) {
-      // Remove track analytics data
-      this.trackStats.delete(
-        track.sid || track.mediaStreamTrack?.id || 'unknown'
-      );
+    if (track.kind !== Track.Kind.Audio) {
+      return;
+    }
 
-      // Remove all attached elements
-      for (const element of track.detach()) {
-        try {
-          if (element?.parentNode?.removeChild) {
-            element.parentNode.removeChild(element);
-          }
-        } catch {
-          // Ignore DOM removal errors
+    this.#cleanupTrackMetadata(track);
+
+    // Remove all attached elements (RemoteTrack only)
+    if ('detach' in track && typeof track.detach === 'function') {
+      this.#detachTrackElements(track as RemoteTrack);
+    }
+
+    // Emit track unsubscription event
+    this.emit('trackUnsubscribed', {
+      track,
+      publication,
+      participant: participant.identity || 'unknown',
+    } as TrackUnsubscriptionData);
+  }
+
+  /**
+   * Detaches and removes DOM elements for a track
+   * @private
+   */
+  #detachTrackElements(track: RemoteTrack): void {
+    for (const element of track.detach()) {
+      try {
+        if (element?.parentNode?.removeChild) {
+          element.parentNode.removeChild(element);
         }
-
-        // Remove element from tracking set
-        this.audioElements.delete(element);
+      } catch {
+        // Ignore DOM removal errors
       }
 
-      // Emit track unsubscription event
-      const unsubscriptionData: TrackUnsubscriptionData = {
-        track,
-        publication,
-        participant: participant.identity || 'unknown',
-      };
-      this.emit('trackUnsubscribed', unsubscriptionData);
+      // Remove element from tracking set
+      this.audioElements.delete(element);
     }
+  }
+
+  /**
+   * Cleans up internal metadata for a track
+   * @private
+   */
+  #cleanupTrackMetadata(track: Track): void {
+    this.trackStats.delete(
+      track.sid || track.mediaStreamTrack?.id || 'unknown'
+    );
+  }
+
+  /**
+   * Processes local audio track unpublications
+   * @param track - The local audio track
+   * @param publication - Local track publication metadata
+   * @param participant - The local participant who unpublished the track
+   */
+  handleLocalTrackUnsubscribed(
+    track: LocalTrack,
+    publication: LocalTrackPublication,
+    participant: Participant
+  ): void {
+    this.handleTrackUnsubscribed(track, publication, participant);
   }
 
   /**
@@ -1177,21 +1251,49 @@ export class LiveKitAudioManager extends EventEmitter {
     if (this.audioContext) {
       return;
     }
-    const ctorUnknown = (globalThis as Record<string, unknown>).AudioContext;
-    const Ctor = (
-      typeof ctorUnknown === 'function'
-        ? (ctorUnknown as new () => MinimalAudioContext)
-        : null
-    ) as new () => MinimalAudioContext | null;
-    if (!Ctor) {
+
+    const AudioContextCtor = (globalThis.AudioContext ||
+      (globalThis as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext) as {
+      new (options?: AudioContextOptions): AudioContext;
+    };
+
+    if (typeof AudioContextCtor !== 'function') {
       return;
     }
+
     try {
-      this.audioContext = new Ctor();
+      // Force 16kHz to match voice agent requirements across all features
+      const ctx = new AudioContextCtor({
+        sampleRate: 16_000,
+      });
+
+      this.audioContext = ctx as unknown as MinimalAudioContext;
+
+      // Auto-resume to avoid "suspended" state issues on initialization
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch((err) => {
+          this.logger.warn('Failed to auto-resume AudioContext:', {
+            source: 'LiveKitAudioManager',
+            error: err,
+          });
+        });
+      }
     } catch {
-      this.audioContext = null;
+      // Fallback for browsers that don't support sampleRate option or 16k
+      try {
+        this.audioContext =
+          new AudioContextCtor() as unknown as MinimalAudioContext;
+      } catch {
+        this.audioContext = null;
+      }
     }
   }
+
+  /**
+   * Gets or creates the internal mixer node for combined audio capture
+   * @private
+   */
 
   /** Initialize analyser for microphone (input) if possible */
   #initializeInputAnalyser(): void {
@@ -1415,6 +1517,7 @@ export class LiveKitAudioManager extends EventEmitter {
     this.audioCaptureEnabled = true;
     this.audioCaptureOptions = {
       source: options.source || 'agent',
+      trackSourceFilter: options.trackSourceFilter || 'microphone',
       format: options.format || DEFAULT_AUDIO_FORMAT,
       chunkSize: options.chunkSize || DEFAULT_CHUNK_SIZE,
       bufferSize: options.bufferSize || DEFAULT_BUFFER_SIZE,
@@ -1424,6 +1527,12 @@ export class LiveKitAudioManager extends EventEmitter {
     // Set up capture for existing tracks
     this.#setupExistingTrackCapture();
   }
+
+  /**
+   * Internal state for AudioWorklet registration to prevent race conditions
+   * @private
+   */
+  private workletReady: Promise<void> | null = null;
 
   /**
    * Disables audio capture and cleans up all capture resources
@@ -1441,6 +1550,7 @@ export class LiveKitAudioManager extends EventEmitter {
     this.audioCaptureEnabled = false;
     this.#cleanupAudioCapture();
     this.audioCaptureOptions = null;
+    this.workletReady = null;
   }
 
   /**
@@ -1452,7 +1562,7 @@ export class LiveKitAudioManager extends EventEmitter {
       return;
     }
 
-    const { source, format } = this.audioCaptureOptions;
+    const { source, format, trackSourceFilter } = this.audioCaptureOptions;
 
     if (!format) {
       return;
@@ -1463,15 +1573,26 @@ export class LiveKitAudioManager extends EventEmitter {
       const isAgent = trackData.participant.toLowerCase().includes('agent');
       const trackSource: 'agent' | 'user' = isAgent ? 'agent' : 'user';
 
-      // Check if we should capture this track
-      if (source === 'both' || source === trackSource) {
-        this.#setupTrackCapture(
-          trackId,
-          trackData.participant,
-          trackSource,
-          format
-        );
+      // Check if we should capture this participant's source
+      if (source !== 'both' && source !== trackSource) {
+        continue;
       }
+
+      // Check if we should capture this specific track source
+      const actualTrackSource = trackData.source;
+      if (
+        trackSourceFilter !== 'all' &&
+        trackSourceFilter !== actualTrackSource
+      ) {
+        continue;
+      }
+
+      this.#setupTrackCapture(
+        trackId,
+        trackData.participant,
+        trackSource,
+        format
+      );
     }
   }
 
@@ -1495,28 +1616,63 @@ export class LiveKitAudioManager extends EventEmitter {
       return;
     }
 
+    // Prevent duplicate capture setup for the same track
+    if (this.trackCaptureMap.has(trackId)) {
+      this.logger.log(`Skipping duplicate setup for ${source} (${trackId})`, {
+        source: 'LiveKitAudioManager',
+      });
+      return;
+    }
+
     // Store capture metadata
+    const trackSource = this.#getTrackSourceString(track.source);
     this.trackCaptureMap.set(trackId, { participant, source });
 
-    const stream = new MediaStream([track.mediaStreamTrack]);
+    // CRITICAL FIX: Clone the track to avoid resource contention
+    // Using the same track for both playback and capture causes choppy audio
+    const clonedTrack = track.mediaStreamTrack.clone();
+    const stream = new MediaStream([clonedTrack]);
+
+    // Store the cloned track so we can stop it during cleanup
+    this.clonedTracks.set(trackId, clonedTrack);
 
     if (format === 'opus-webm') {
-      this.#setupEncodedCapture(stream, trackId, participant, source);
+      this.#setupEncodedCapture({
+        stream,
+        trackId,
+        participant,
+        source,
+        trackSource,
+      });
     } else {
-      this.#setupPCMCapture({ stream, trackId, participant, source, format });
+      this.#setupPCMCapture({
+        stream,
+        trackId,
+        participant,
+        source,
+        format,
+        trackSource,
+      });
     }
   }
+
+  /**
+   * Initializes a single capture session for the combined mixer stream
+   * @private
+   */
 
   /**
    * Sets up encoded audio capture using MediaRecorder
    * @private
    */
-  #setupEncodedCapture(
-    stream: MediaStream,
-    trackId: string,
-    participant: string,
-    source: 'agent' | 'user'
-  ): void {
+  #setupEncodedCapture(options: {
+    stream: MediaStream;
+    trackId: string;
+    participant: string;
+    source: 'agent' | 'user';
+    trackSource: string;
+  }): void {
+    const { stream, trackId, participant, source, trackSource } = options;
     if (!this.audioCaptureOptions?.callback) {
       return;
     }
@@ -1525,18 +1681,21 @@ export class LiveKitAudioManager extends EventEmitter {
 
     try {
       const mimeType = this.#getSupportedMimeType();
-      const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      const recorderOptions: MediaRecorderOptions = mimeType
+        ? { mimeType }
+        : {};
 
-      const recorder = new MediaRecorder(stream, options);
+      const recorder = new MediaRecorder(stream, recorderOptions);
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           event.data.arrayBuffer().then((buffer) => {
             const metadata: AudioCaptureMetadata = {
               participant,
-              source,
+              source: source as 'agent' | 'user',
               timestamp: Date.now(),
               trackId,
+              trackSource,
               format: 'opus-webm',
             };
             callback(buffer, metadata);
@@ -1568,20 +1727,23 @@ export class LiveKitAudioManager extends EventEmitter {
     participant: string;
     source: 'agent' | 'user';
     format: AudioCaptureFormat;
+    trackSource: string;
   }): void {
-    const { stream, trackId, participant, source, format } = options;
+    const { stream, trackId, participant, source, format, trackSource } =
+      options;
 
     if (!this.audioCaptureOptions?.callback) {
       return;
     }
 
-    const { bufferSize, callback } = this.audioCaptureOptions;
+    const { callback } = this.audioCaptureOptions;
+    const bufferSize =
+      this.audioCaptureOptions.bufferSize || DEFAULT_PCM_BUFFER_SIZE;
 
     try {
-      // Create AudioContext if needed
+      this.#ensureAudioContext();
       if (!this.audioContext) {
-        this.audioContext =
-          new AudioContext() as unknown as MinimalAudioContext;
+        throw new Error('WebAudio is not supported in this environment');
       }
 
       const audioContext = this.audioContext as unknown as AudioContext;
@@ -1593,32 +1755,243 @@ export class LiveKitAudioManager extends EventEmitter {
           // or fail silently if policy is strict
         });
       }
+
+      // Try AudioWorklet first (modern, off-main-thread)
+      if (
+        audioContext.audioWorklet &&
+        typeof audioContext.audioWorklet.addModule === 'function'
+      ) {
+        this.#setupAudioWorkletCapture({
+          audioContext,
+          stream,
+          trackId,
+          participant,
+          source,
+          trackSource,
+          format,
+          bufferSize,
+          callback,
+        });
+        return;
+      }
+
+      // Fallback to ScriptProcessorNode (legacy, main-thread)
+      this.#setupScriptProcessorCapture({
+        audioContext,
+        stream,
+        trackId,
+        participant,
+        source,
+        trackSource,
+        format,
+        bufferSize,
+        callback,
+      });
+    } catch (error) {
+      this.emit(
+        'error',
+        new Error(
+          `Failed to setup PCM audio capture: ${error instanceof Error ? error.message : String(error)}`
+        )
+      );
+    }
+  }
+
+  /**
+   * Sets up AudioWorklet-based PCM capture (Modern API)
+   * @private
+   */
+  async #setupAudioWorkletCapture(options: {
+    audioContext: AudioContext;
+    stream: MediaStream;
+    trackId: string;
+    participant: string;
+    source: 'agent' | 'user';
+    trackSource: string;
+    format: AudioCaptureFormat;
+    bufferSize: number;
+    callback: (
+      data: Float32Array | Int16Array,
+      metadata: AudioCaptureMetadata
+    ) => void;
+  }): Promise<void> {
+    const {
+      audioContext,
+      stream,
+      trackId,
+      participant,
+      source,
+      trackSource,
+      format,
+      bufferSize,
+      callback,
+    } = options;
+
+    try {
+      // Ensure worklet is registered exactly once (prevents errors on multiple source setup)
+      if (!this.workletReady) {
+        this.workletReady = (async () => {
+          // Inline AudioWorkletProcessor code with internal buffering
+          const workletCode = `
+            class PCMProcessor extends AudioWorkletProcessor {
+              constructor(options) {
+                super();
+                this.bufferSize = options.processorOptions.bufferSize || ${DEFAULT_PCM_BUFFER_SIZE};
+                this.buffer = new Float32Array(this.bufferSize);
+                this.index = 0;
+              }
+
+              process(inputs, outputs, parameters) {
+                const input = inputs[0];
+                if (!input || !input.length) return true;
+
+                const channelData = input[0];
+                if (!channelData) return true;
+
+                for (let i = 0; i < channelData.length; i++) {
+                  this.buffer[this.index++] = channelData[i];
+
+                  if (this.index >= this.bufferSize) {
+                    const bufferToSend = this.buffer.slice(0, this.bufferSize);
+                    this.index = 0;
+                    this.port.postMessage(bufferToSend, [bufferToSend.buffer]);
+                  }
+                }
+                
+                return true;
+              }
+            }
+            registerProcessor('pcm-processor', PCMProcessor);
+          `;
+
+          const blob = new Blob([workletCode], {
+            type: 'application/javascript',
+          });
+          const url = URL.createObjectURL(blob);
+          await audioContext.audioWorklet.addModule(url);
+          URL.revokeObjectURL(url);
+        })();
+      }
+
+      // Wait for registration if it's in progress
+      await this.workletReady;
+
       const sourceNode = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
 
-      processor.onaudioprocess = (e) => {
-        const inputBuffer = e.inputBuffer;
-        const audioData = inputBuffer.getChannelData(0);
+      const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor', {
+        processorOptions: {
+          bufferSize,
+        },
+      });
 
-        let outputData: Float32Array | Int16Array = audioData;
-
-        // Convert to Int16 if requested
-        if (format === 'pcm-i16') {
-          const int16Array = new Int16Array(audioData.length);
-          for (let i = 0; i < audioData.length; i++) {
-            int16Array[i] = Math.max(
-              INT16_MIN,
-              Math.min(INT16_MAX, audioData[i] * INT16_SCALE)
-            );
-          }
-          outputData = int16Array;
-        }
+      workletNode.port.onmessage = (event) => {
+        const audioData = event.data as Float32Array;
+        const outputData =
+          format === 'pcm-i16' ? this.#float32ToInt16(audioData) : audioData;
 
         const metadata: AudioCaptureMetadata = {
           participant,
           source,
           timestamp: Date.now(),
           trackId,
+          trackSource,
+          format,
+          sampleRate: audioContext.sampleRate,
+          channels: 1,
+        };
+
+        try {
+          callback(outputData, metadata);
+        } catch (err) {
+          this.logger.error(`Callback error for ${source}:`, {
+            source: 'LiveKitAudioManager',
+            error: err,
+          });
+        }
+      };
+
+      // Error handler for worklet processor
+      workletNode.onprocessorerror = (event) => {
+        this.logger.error(
+          `Worklet processor error for ${source} (${trackId}):`,
+          {
+            source: 'LiveKitAudioManager',
+            error: event,
+          }
+        );
+      };
+
+      sourceNode.connect(workletNode);
+
+      // Store nodes to prevent garbage collection FIRST
+      this.sourceNodes.set(trackId, sourceNode as MediaStreamAudioSourceNode);
+      this.processors.set(trackId, workletNode);
+
+      // CRITICAL: Connect to destination to keep worklet alive
+      const silentGain = audioContext.createGain();
+      silentGain.gain.value = 0;
+      workletNode.connect(silentGain);
+      silentGain.connect(audioContext.destination);
+      this.processors.set(`${trackId}_gain`, silentGain);
+    } catch (error) {
+      this.logger.error(`AudioWorklet setup failed for ${source}:`, {
+        source: 'LiveKitAudioManager',
+        error,
+      });
+
+      this.workletReady = null; // Allow retry on failure
+      this.#setupScriptProcessorCapture(options);
+    }
+  }
+
+  /**
+   * Sets up ScriptProcessorNode-based PCM capture (Legacy Fallback)
+   * @private
+   */
+  #setupScriptProcessorCapture(options: {
+    audioContext: AudioContext;
+    stream: MediaStream;
+    trackId: string;
+    participant: string;
+    source: 'agent' | 'user';
+    trackSource: string;
+    format: AudioCaptureFormat;
+    bufferSize: number;
+    callback: (
+      data: Float32Array | Int16Array,
+      metadata: AudioCaptureMetadata
+    ) => void;
+  }): void {
+    const {
+      audioContext,
+      stream,
+      trackId,
+      participant,
+      source,
+      trackSource,
+      format,
+      bufferSize,
+      callback,
+    } = options;
+
+    try {
+      const sourceNode = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        const inputBuffer = e.inputBuffer;
+        const audioData = inputBuffer.getChannelData(0);
+        const outputData =
+          format === 'pcm-i16'
+            ? this.#float32ToInt16(audioData)
+            : new Float32Array(audioData);
+
+        const metadata: AudioCaptureMetadata = {
+          participant,
+          source: source as 'agent' | 'user',
+          timestamp: Date.now(),
+          trackId,
+          trackSource,
           format,
           sampleRate: inputBuffer.sampleRate,
           channels: inputBuffer.numberOfChannels,
@@ -1628,17 +2001,25 @@ export class LiveKitAudioManager extends EventEmitter {
       };
 
       sourceNode.connect(processor);
-      processor.connect(audioContext.destination);
 
-      // Store processor reference
-      this.processors.set(trackId, processor as unknown as ScriptProcessorNode);
+      // CRITICAL: Prevent GC by storing references
+      this.sourceNodes.set(trackId, sourceNode);
+      this.processors.set(trackId, processor);
+
+      // Some browsers require connection to destination to drive processing,
+      // but we use a silent gain to prevent double audio.
+      const silentGain = audioContext.createGain();
+      silentGain.gain.value = 0;
+      processor.connect(silentGain);
+      silentGain.connect(audioContext.destination);
+
+      // Also store the gain node to prevent GC
+      this.processors.set(`${trackId}_gain`, silentGain);
     } catch (error) {
-      this.emit(
-        'error',
-        new Error(
-          `Failed to setup PCM audio capture: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
+      this.logger.error(`ScriptProcessor setup failed for ${source}:`, {
+        source: 'LiveKitAudioManager',
+        error,
+      });
     }
   }
 
@@ -1689,6 +2070,7 @@ export class LiveKitAudioManager extends EventEmitter {
    * @private
    */
   #cleanupAudioCapture(): void {
+    this.workletReady = null;
     // Stop and clean up MediaRecorders
     for (const recorder of this.recorders.values()) {
       try {
@@ -1699,7 +2081,7 @@ export class LiveKitAudioManager extends EventEmitter {
     }
     this.recorders.clear();
 
-    // Disconnect and clean up ScriptProcessorNodes
+    // Disconnect and clean up all processors (Worklets, ScriptProcessors, GainNodes)
     for (const processor of this.processors.values()) {
       try {
         processor.disconnect();
@@ -1708,6 +2090,26 @@ export class LiveKitAudioManager extends EventEmitter {
       }
     }
     this.processors.clear();
+
+    // Disconnect and clean up all source nodes
+    for (const sourceNode of this.sourceNodes.values()) {
+      try {
+        sourceNode.disconnect();
+      } catch {
+        // Ignore errors
+      }
+    }
+    this.sourceNodes.clear();
+
+    // Stop and clean up cloned tracks to release resources
+    for (const clonedTrack of this.clonedTracks.values()) {
+      try {
+        clonedTrack.stop();
+      } catch {
+        // Ignore errors
+      }
+    }
+    this.clonedTracks.clear();
 
     // Clear track capture map
     this.trackCaptureMap.clear();
@@ -1764,5 +2166,19 @@ export class LiveKitAudioManager extends EventEmitter {
     }
 
     return ''; // Let browser choose default
+  }
+
+  /**
+   * Converts Float32 audio samples (-1.0 to 1.0) to Int16 (-32768 to 32767)
+   * @private
+   */
+  #float32ToInt16(buffer: Float32Array): Int16Array {
+    const l = buffer.length;
+    const buf = new Int16Array(l);
+    for (let i = 0; i < l; i++) {
+      // Clamp to -1.0 to 1.0 before scaling
+      buf[i] = Math.max(-1, Math.min(1, buffer[i])) * INT16_SCALE;
+    }
+    return buf;
   }
 }

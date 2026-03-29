@@ -138,6 +138,7 @@
 
 import { EventEmitter } from 'events';
 import { ConnectionQuality, type Participant, type Room } from 'livekit-client';
+import { createDebugLogger, type DebugLogger } from '../utils/debug';
 import type {
   AudioLevelsResult,
   AudioMetrics,
@@ -241,6 +242,9 @@ export class LiveKitAnalytics extends EventEmitter {
   /** Previous connection quality for jitter change detection (internal) */
   private previousConnectionQuality = 'unknown';
 
+  /** Debug logger instance for conditional logging */
+  private readonly logger: DebugLogger;
+
   /**
    * Creates a new LiveKitAnalytics instance
    *
@@ -262,8 +266,14 @@ export class LiveKitAnalytics extends EventEmitter {
    * analytics.startAnalyticsCollection();
    * ```
    */
-  constructor() {
+  constructor(debug = false) {
     super();
+    this.logger = createDebugLogger(debug);
+
+    this.logger.log('Initializing LiveKitAnalytics', {
+      source: 'LiveKitAnalytics',
+    });
+
     this.#initializeMetrics();
   }
 

@@ -61,9 +61,10 @@ jest.mock('livekit-client', () => ({
     connect: jest.fn(),
     disconnect: jest.fn(),
     prepareConnection: jest.fn(),
+    registerRpcMethod: jest.fn(),
+    unregisterRpcMethod: jest.fn(),
     localParticipant: {
       setMicrophoneEnabled: jest.fn(),
-      registerRpcMethod: jest.fn(),
       getTrackPublication: jest.fn(),
     },
     on: jest.fn().mockReturnThis(),

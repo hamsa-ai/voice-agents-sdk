@@ -62,6 +62,10 @@ export default class LiveKitManager extends EventEmitter {
     accessToken: string;
     /** Debug logger instance for conditional logging */
     logger: DebugLogger;
+    /** CSS selector for the element where avatar video will be rendered */
+    avatarContainerSelector: string | undefined;
+    /** Video elements created for avatar tracks, tracked for cleanup */
+    videoElements: Set<HTMLVideoElement>;
     /**
      * Creates a new LiveKitManager instance
      *
@@ -86,7 +90,10 @@ export default class LiveKitManager extends EventEmitter {
      * );
      * ```
      */
-    constructor(lkUrl: string, accessToken: string, tools?: Tool[], debug?: boolean);
+    constructor(lkUrl: string, accessToken: string, tools?: Tool[], { debug, avatarContainerSelector, }?: {
+        debug?: boolean;
+        avatarContainerSelector?: string;
+    });
     /**
      * Establishes connection to the LiveKit room and initializes voice agent communication
      *

@@ -2,9 +2,11 @@ import { EventEmitter } from 'events';
 import type { ConnectionState, LocalTrack, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
 import LiveKitManager, { type AgentState, type AudioLevelsResult, type CallAnalyticsResult, type ConnectionStatsResult, type ParticipantData, type PerformanceMetricsResult, type TrackStatsResult } from './classes/livekit-manager';
 import ScreenWakeLock from './classes/screen-wake-lock';
-import type { AudioCaptureCallback, AudioCaptureOptions, ConnectionQualityData, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
+import type { AudioCaptureCallback, AudioCaptureOptions, ConnectionQualityData, DTMFDigit, TrackSubscriptionData, TrackUnsubscriptionData } from './classes/types';
+export type { RpcInvocationData } from 'livekit-client';
+export { RpcError } from 'livekit-client';
 export type { AgentState } from './classes/livekit-manager';
-export type { AudioCaptureCallback, AudioCaptureFormat, AudioCaptureMetadata, AudioCaptureOptions, AudioCaptureSource, } from './classes/types';
+export type { AudioCaptureCallback, AudioCaptureFormat, AudioCaptureMetadata, AudioCaptureOptions, AudioCaptureSource, DTMFDigit, } from './classes/types';
 /**
  * Custom error class that includes both human-readable message and machine-readable messageKey
  * for internationalization and programmatic error handling
@@ -15,13 +17,23 @@ declare class HamsaApiError extends Error {
     constructor(message: string, messageKey?: string);
 }
 /**
+ * Supported deployment regions for the Hamsa platform.
+ * Determines the default API and LiveKit URLs used for the connection.
+ */
+export type Region = 'eu' | 'uae';
+/**
  * Configuration options for the HamsaVoiceAgent constructor
  * Allows customization of API endpoints and other global settings
  */
 type HamsaVoiceAgentConfig = {
-    /** Base URL for the Hamsa API. Defaults to 'https://api.tryhamsa.com' */
+    /**
+     * Deployment region for the Hamsa platform. Determines default API and LiveKit URLs.
+     * Defaults to 'eu'. Ignored when API_URL or LIVEKIT_URL are explicitly provided.
+     */
+    region?: Region;
+    /** Base URL for the Hamsa API. Overrides the region default when provided. */
     API_URL?: string;
-    /** LiveKit RTC WebSocket URL. Defaults to 'wss://rtc.eu.tryhamsa.com' */
+    /** LiveKit RTC WebSocket URL. Overrides the region default when provided. */
     LIVEKIT_URL?: string;
     /** Enable debug logging for troubleshooting. Defaults to false */
     debug?: boolean;
@@ -61,6 +73,13 @@ type StartOptions = {
     connectionDelay?: ConnectionDelays;
     /** Disable wake lock to allow device sleep during conversation */
     disableWakeLock?: boolean;
+    /**
+     * CSS selector for the container element where the avatar video will be rendered.
+     * When provided, the agent's video track (avatar) will be attached to this element.
+     * @example '#avatar-container'
+     * @example '.agent-video-wrapper'
+     */
+    avatarContainerSelector?: string;
     /**
      * Simple callback to receive agent audio data (Level 1 API - Simplest)
      * Automatically captures agent audio in opus-webm format with 100ms chunks
@@ -105,6 +124,8 @@ type Tool = {
     required?: string[];
     /** Internal function mapping (used for tool execution) */
     func_map?: Record<string, unknown>;
+    /** The implementation function to execute when the agent calls this tool */
+    fn?: (...args: unknown[]) => unknown | Promise<unknown>;
 };
 /**
  * Definition of a parameter for a client-side tool
@@ -131,6 +152,13 @@ type JobDetails = {
     [key: string]: unknown;
 };
 /**
+ * Data object passed to callStarted event handlers
+ */
+type CallStartedData = {
+    /** Unique job/call ID for this conversation session */
+    jobId: string;
+};
+/**
  * Event handler signatures for HamsaVoiceAgent
  *
  * Defines the type-safe interface for all events emitted by the HamsaVoiceAgent.
@@ -149,13 +177,18 @@ type JobDetails = {
  *     showNetworkWarning(metrics);
  *   }
  * });
+ *
+ * agent.on('callStarted', ({ jobId }) => {
+ *   console.log('Call started with ID:', jobId);
+ *   analytics.trackCall(jobId);
+ * });
  * ```
  */
 type HamsaVoiceAgentEvents = {
     /** Emitted when connection is established (before call fully starts) */
     start: () => void;
-    /** Emitted when call is fully started and ready */
-    callStarted: () => void;
+    /** Emitted when call is fully started and ready with conversation details */
+    callStarted: (data: CallStartedData) => void;
     /** Emitted when call ends (user or agent initiated) */
     callEnded: () => void;
     /** Emitted when call is paused */
@@ -178,6 +211,8 @@ type HamsaVoiceAgentEvents = {
     listening: () => void;
     /** Emitted when agent state changes (idle, initializing, listening, thinking, speaking) */
     agentStateChanged: (state: AgentState) => void;
+    /** Emitted when a DTMF digit is successfully sent */
+    dtmfSent: (digit: DTMFDigit) => void;
     /** Emitted when an error occurs */
     error: (error: Error | HamsaApiError) => void;
     /** Emitted when a remote track is subscribed */
@@ -211,6 +246,10 @@ type HamsaVoiceAgentEvents = {
     customEvent: (eventType: string, eventData: unknown, metadata?: Record<string, unknown>) => void;
     /** Emitted for informational messages */
     info: (info: string) => void;
+    /** Emitted when tools are registered with the agent */
+    toolsRegistered: (tools: Tool[]) => void;
+    /** Emitted when a client-side tool execution fails */
+    rpcError: (functionName: string, error: unknown) => void;
 };
 /**
  * HamsaVoiceAgent - Main SDK class for voice agent integration
@@ -348,15 +387,19 @@ declare class HamsaVoiceAgent extends EventEmitter {
      *
      * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com)
      * @param config - Optional configuration settings
-     * @param config.API_URL - Custom API endpoint URL (defaults to https://api.tryhamsa.com)
-     * @param config.LIVEKIT_URL - Custom LiveKit RTC URL (defaults to wss://rtc.eu.tryhamsa.com)
+     * @param config.region - Deployment region ('eu' | 'uae'). Defaults to 'eu'.
+     * @param config.API_URL - Custom API endpoint URL. Overrides the region default.
+     * @param config.LIVEKIT_URL - Custom LiveKit RTC URL. Overrides the region default.
      *
      * @example
      * ```typescript
-     * // Using default endpoints
+     * // Using default region (EU)
      * const agent = new HamsaVoiceAgent('hamsa_api_key_here');
      *
-     * // Using custom endpoints
+     * // Using UAE region
+     * const agent = new HamsaVoiceAgent('hamsa_api_key_here', { region: 'uae' });
+     *
+     * // Using custom endpoints (overrides region)
      * const agent = new HamsaVoiceAgent('hamsa_api_key_here', {
      *   API_URL: 'https://custom-api.example.com',
      *   LIVEKIT_URL: 'wss://custom-rtc.example.com'
@@ -365,7 +408,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
      *
      * @throws {Error} If apiKey is not provided or invalid
      */
-    constructor(apiKey: string, { API_URL, LIVEKIT_URL, debug, }?: HamsaVoiceAgentConfig);
+    constructor(apiKey: string, { region, API_URL, LIVEKIT_URL, debug, }?: HamsaVoiceAgentConfig);
     /**
      * Adjusts the volume level for voice agent audio playback
      *
@@ -408,6 +451,40 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * ```
      */
     getOutputVolume(): number;
+    /**
+     * Gets the current job/call ID for this conversation
+     *
+     * The job ID uniquely identifies this conversation session and can be used
+     * to track the conversation, retrieve analytics, or poll for completion status
+     * using the getJobDetails() method.
+     *
+     * @returns The job/call ID, or null if conversation hasn't started yet
+     *
+     * @example
+     * ```typescript
+     * // Get job ID when call starts
+     * agent.on('callStarted', () => {
+     *   const callId = agent.getJobId();
+     *   console.log('Call ID:', callId);
+     *
+     *   // Send to analytics service
+     *   analytics.trackCall(callId);
+     *
+     *   // Store for later reference
+     *   localStorage.setItem('lastCallId', callId);
+     * });
+     *
+     * // Use job ID to check completion status
+     * agent.on('callEnded', async () => {
+     *   const jobId = agent.getJobId();
+     *   if (jobId) {
+     *     const details = await agent.getJobDetails();
+     *     console.log('Call completed:', details);
+     *   }
+     * });
+     * ```
+     */
+    getJobId(): string | null;
     /**
      * Gets the current input volume level from the user's microphone
      *
@@ -504,6 +581,72 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * ```
      */
     sendContextualUpdate(context: string): void;
+    /**
+     * Sends a DTMF (Dual-Tone Multi-Frequency) digit to the voice agent
+     *
+     * Simulates pressing a key on a phone keypad during the call. This enables
+     * browser-based call testing with DTMF input simulation, allowing users to
+     * test IVR flows and DTMF transitions without making actual phone calls.
+     *
+     * Uses LiveKit's native DTMF API (publishDtmf) which properly integrates with
+     * telephony systems and SIP infrastructure per RFC 4733 standard.
+     *
+     * @param digit - A single DTMF digit: '0'-'9', '*', or '#'
+     * @throws {Error} If called when not connected (no active call)
+     * @throws {Error} If the digit is not a valid DTMF character
+     * @fires dtmfSent When a DTMF digit is successfully sent to the agent
+     *
+     * @example Basic usage
+     * ```typescript
+     * const agent = new HamsaVoiceAgent(apiKey, config);
+     * await agent.start({ agentId, params });
+     *
+     * // Listen for DTMF send confirmations
+     * agent.on('dtmfSent', (digit) => {
+     *   console.log(`Sent DTMF digit: ${digit}`);
+     *   highlightKeypadButton(digit);
+     * });
+     *
+     * // Later, when user presses a key on the UI keypad:
+     * agent.sendDTMF('1');  // Simulates pressing "1"
+     * agent.sendDTMF('*');  // Simulates pressing "*"
+     * agent.sendDTMF('#');  // Simulates pressing "#"
+     * ```
+     *
+     * @example With UI keypad
+     * ```typescript
+     * // Create keypad buttons
+     * const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+     *
+     * digits.forEach(digit => {
+     *   const button = document.createElement('button');
+     *   button.textContent = digit;
+     *   button.onclick = () => {
+     *     try {
+     *       agent.sendDTMF(digit);
+     *       playKeyTone(digit); // Optional: play local tone feedback
+     *     } catch (error) {
+     *       console.error('Failed to send DTMF:', error.message);
+     *     }
+     *   };
+     *   keypadContainer.appendChild(button);
+     * });
+     * ```
+     *
+     * @example Error handling
+     * ```typescript
+     * try {
+     *   agent.sendDTMF('1');
+     * } catch (error) {
+     *   if (error.message.includes('not connected')) {
+     *     showConnectionError();
+     *   } else if (error.message.includes('Invalid DTMF')) {
+     *     showInvalidInputError();
+     *   }
+     * }
+     * ```
+     */
+    sendDTMF(digit: DTMFDigit): void;
     /**
      * Gets frequency data from the user's microphone input
      *
@@ -747,7 +890,7 @@ declare class HamsaVoiceAgent extends EventEmitter {
      * await agent.start({ agentId: 'my_agent', voiceEnablement: true });
      * ```
      */
-    start({ agentId, params, voiceEnablement, tools, userId: _userId, preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices, connectionDelay: _connectionDelay, disableWakeLock: _disableWakeLock, onAudioData, captureAudio, }: StartOptions): Promise<void>;
+    start({ agentId, params, voiceEnablement, tools, userId: _userId, preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices, connectionDelay: _connectionDelay, disableWakeLock: _disableWakeLock, onAudioData, captureAudio, avatarContainerSelector, }: StartOptions): Promise<void>;
     /**
      * Terminates the current voice agent conversation
      *
@@ -1110,4 +1253,4 @@ export { HamsaVoiceAgent, HamsaApiError };
 export default HamsaVoiceAgent;
 export type { LocalTrack, RemoteParticipant, RemoteTrack, RemoteTrackPublication, Room, } from 'livekit-client';
 export type { AudioLevelsResult, CallAnalyticsResult, ConnectionStatsResult, ParticipantData, PerformanceMetricsResult, TrackStatsResult, } from './classes/livekit-manager';
-export type { HamsaVoiceAgentEvents, StartOptions, Tool, JobDetails };
+export type { CallStartedData, HamsaVoiceAgentEvents, StartOptions, Tool, JobDetails, };

@@ -171,6 +171,8 @@ import {
 import { createDebugLogger, type DebugLogger } from '../utils';
 import type { ParticipantData } from './types';
 
+const IOS_REGEX = /iP(hone|ad|od)|iPhone/i;
+
 /**
  * LiveKitConnection class for managing WebRTC connections to voice agent rooms
  *
@@ -394,14 +396,25 @@ export class LiveKitConnection extends EventEmitter {
       this.callStartTime = Date.now();
       this.connectionAttempts++;
 
-      // Pre-warm connection for optimized establishment time
-      this.room?.prepareConnection(this.lkUrl, this.accessToken);
+      // Pre-warm connection on non-iOS platforms only.
+      // iOS Safari can suspend the tab between prepareConnection and connect,
+      // leaving a stale WebSocket that causes the initial handshake to fail.
+      const isIOS =
+        typeof navigator !== 'undefined' && IOS_REGEX.test(navigator.userAgent);
+      if (!isIOS) {
+        this.room?.prepareConnection(this.lkUrl, this.accessToken);
+      }
 
       // Track connection establishment performance
       const connectionStart = Date.now();
 
-      // Establish secure WebRTC connection to LiveKit room
-      await this.room?.connect(this.lkUrl, this.accessToken);
+      // Establish secure WebRTC connection to LiveKit room.
+      // maxRetries: default is 1, which fails on iOS when Safari suspends the
+      // tab mid-handshake. Bump to 3 so transient drops on the initial signal
+      // WebSocket get retried before surfacing an error.
+      await this.room?.connect(this.lkUrl, this.accessToken, {
+        maxRetries: 3,
+      });
 
       this.logger.log('room.connect() completed successfully', {
         source: 'LiveKitConnection',

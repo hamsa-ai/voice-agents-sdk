@@ -6,14 +6,18 @@
  */
 
 import { beforeEach, describe, expect, test } from '@jest/globals';
+import LiveKitManager from '../../src/classes/livekit-manager';
+import { createMockRoom } from '../utils/livekit-mocks';
 import { TEST_DATA } from '../utils/test-constants';
 import {
   createMockDataPayload,
   createMockInfoPayload,
+  createMockVideoTrack,
   extractEventHandler,
   RoomEvent,
   setupTest,
   type TestContext,
+  Track,
 } from './shared-setup';
 
 describe('LiveKitManager - Event Handling', () => {
@@ -293,6 +297,116 @@ describe('LiveKitManager - Event Handling', () => {
         dataReceivedHandler?.(transcriptionPayload, {});
         dataReceivedHandler?.(answerPayload, {});
       }).not.toThrow();
+    });
+  });
+
+  describe('Avatar Video Track Handling', () => {
+    function createAvatarManager(avatarContainerSelector?: string) {
+      const freshRoom = createMockRoom();
+      const { Room } = jest.requireMock('livekit-client') as {
+        Room: jest.MockedClass<any>;
+      };
+      Room.mockImplementationOnce(() => freshRoom);
+      const manager = new LiveKitManager('wss://test.com', 'token', [], {
+        avatarContainerSelector,
+      });
+      manager.connection.emit('connected');
+      return { manager, freshRoom };
+    }
+
+    test('should attach video element to container when selector matches', () => {
+      const container = document.createElement('div');
+      container.id = 'avatar-test';
+      document.body.appendChild(container);
+
+      const { freshRoom } = createAvatarManager('#avatar-test');
+      const mockVideoTrack = createMockVideoTrack();
+
+      const trackSubscribedHandler = extractEventHandler(
+        freshRoom,
+        RoomEvent.TrackSubscribed
+      );
+      trackSubscribedHandler?.(
+        mockVideoTrack,
+        { kind: Track.Kind.Video },
+        { identity: 'agent' }
+      );
+
+      expect(mockVideoTrack.attach).toHaveBeenCalled();
+      expect(container.querySelector('video')).not.toBeNull();
+
+      document.body.removeChild(container);
+    });
+
+    test('should not attach video when avatarContainerSelector is not set', () => {
+      const { freshRoom } = createAvatarManager();
+      const mockVideoTrack = createMockVideoTrack();
+
+      const trackSubscribedHandler = extractEventHandler(
+        freshRoom,
+        RoomEvent.TrackSubscribed
+      );
+
+      expect(() => {
+        trackSubscribedHandler?.(
+          mockVideoTrack,
+          { kind: Track.Kind.Video },
+          { identity: 'agent' }
+        );
+      }).not.toThrow();
+
+      expect(mockVideoTrack.attach).not.toHaveBeenCalled();
+    });
+
+    test('should not throw when the container element is not found in the DOM', () => {
+      const { freshRoom } = createAvatarManager('#non-existent-element');
+      const mockVideoTrack = createMockVideoTrack();
+
+      const trackSubscribedHandler = extractEventHandler(
+        freshRoom,
+        RoomEvent.TrackSubscribed
+      );
+
+      expect(() => {
+        trackSubscribedHandler?.(
+          mockVideoTrack,
+          { kind: Track.Kind.Video },
+          { identity: 'agent' }
+        );
+      }).not.toThrow();
+    });
+
+    test('should call detach on the video track when it is unsubscribed', () => {
+      const container = document.createElement('div');
+      container.id = 'avatar-detach-test';
+      document.body.appendChild(container);
+
+      const { freshRoom } = createAvatarManager('#avatar-detach-test');
+      const mockVideoTrack = createMockVideoTrack();
+
+      const trackSubscribedHandler = extractEventHandler(
+        freshRoom,
+        RoomEvent.TrackSubscribed
+      );
+      trackSubscribedHandler?.(
+        mockVideoTrack,
+        { kind: Track.Kind.Video },
+        { identity: 'agent' }
+      );
+
+      const trackUnsubscribedHandler = extractEventHandler(
+        freshRoom,
+        RoomEvent.TrackUnsubscribed
+      );
+      trackUnsubscribedHandler?.(
+        mockVideoTrack,
+        { kind: Track.Kind.Video },
+        { identity: 'agent' }
+      );
+
+      expect(mockVideoTrack.detach).toHaveBeenCalled();
+
+      document.body.removeChild(container);
     });
   });
 

@@ -12,6 +12,7 @@ export type MockRoom = {
   disconnect: jest.Mock;
   prepareConnection: jest.Mock;
   registerRpcMethod: jest.Mock;
+  unregisterRpcMethod: jest.Mock;
   localParticipant: {
     setMicrophoneEnabled: jest.Mock;
     getTrackPublication: jest.Mock;
@@ -39,6 +40,7 @@ export function createMockRoom(): MockRoom {
     disconnect: jest.fn().mockResolvedValue(undefined),
     prepareConnection: jest.fn(),
     registerRpcMethod: jest.fn(),
+    unregisterRpcMethod: jest.fn(),
     localParticipant: {
       setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined),
       getTrackPublication: jest.fn().mockReturnValue({
@@ -151,6 +153,7 @@ export function createMockRoomWithErrors(): MockRoom {
     registerRpcMethod: jest.fn().mockImplementation(() => {
       throw new Error('RPC registration failed');
     }),
+    unregisterRpcMethod: jest.fn(),
     localParticipant: {
       setMicrophoneEnabled: jest.fn().mockImplementation(() => {
         throw new Error('Microphone error');

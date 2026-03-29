@@ -3,8 +3,8 @@
  */
 import type {
   ConnectionQuality,
-  RemoteTrack,
-  RemoteTrackPublication,
+  Track,
+  TrackPublication,
 } from 'livekit-client';
 
 /**
@@ -77,7 +77,7 @@ export type TrackStatsData = {
   /** Unix timestamp when this track was subscribed to */
   subscriptionTime: number;
   /** LiveKit track publication object containing track details */
-  publication: RemoteTrackPublication;
+  publication: TrackPublication;
   /** Track source (microphone, screen_share, etc.) */
   source?: string;
   /** Whether the track is currently muted */
@@ -293,9 +293,9 @@ export type ConnectionQualityData = {
  */
 export type TrackSubscriptionData = {
   /** The LiveKit track object that was subscribed to */
-  track: RemoteTrack;
+  track: Track;
   /** The track publication containing metadata */
-  publication: RemoteTrackPublication;
+  publication: TrackPublication;
   /** Identity of the participant who owns this track */
   participant: string;
   /** Optional statistics about this track subscription */
@@ -308,9 +308,9 @@ export type TrackSubscriptionData = {
  */
 export type TrackUnsubscriptionData = {
   /** The LiveKit track object that was unsubscribed from */
-  track: RemoteTrack;
+  track: Track;
   /** The track publication that was removed */
-  publication: RemoteTrackPublication;
+  publication: TrackPublication;
   /** Identity of the participant who owned this track */
   participant: string;
 };
@@ -350,8 +350,8 @@ export type CustomEventMetadata = {
  */
 export type AudioCaptureFormat =
   | 'opus-webm' // Opus codec in WebM container (efficient, default)
-  | 'pcm-f32' // Raw PCM audio as Float32Array (-1.0 to 1.0)
-  | 'pcm-i16'; // Raw PCM audio as Int16Array (-32768 to 32767)
+  | 'pcm-f32' // Raw PCM audio as Float32Array (-1.0 to 1.0) at 16kHz
+  | 'pcm-i16'; // Raw PCM audio as Int16Array (-32768 to 32767) at 16kHz
 
 /**
  * Source of audio to capture
@@ -373,6 +373,8 @@ export type AudioCaptureMetadata = {
   timestamp: number;
   /** Track ID associated with this audio */
   trackId: string;
+  /** Source of this specific track (e.g. 'microphone', 'screen_share') */
+  trackSource?: string;
   /** Audio format of this chunk */
   format: AudioCaptureFormat;
   /** Sample rate in Hz (for PCM formats) */
@@ -395,6 +397,9 @@ export type AudioCaptureCallback = (
 export type AudioCaptureOptions = {
   /** Source of audio to capture (default: 'agent') */
   source?: AudioCaptureSource;
+  /** Specific track source to capture (default: 'microphone').
+   * Set to 'all' to capture everything including screen share audio. */
+  trackSourceFilter?: 'microphone' | 'screen_share' | 'all';
   /** Audio format to deliver (default: 'opus-webm') */
   format?: AudioCaptureFormat;
   /** Chunk size in milliseconds for encoded formats (default: 100ms) */
@@ -447,3 +452,21 @@ export type LiveKitAgentMetadata = {
   voiceAgentId: string;
   apiKey: string;
 };
+
+/**
+ * Valid DTMF (Dual-Tone Multi-Frequency) digits that can be sent during a call.
+ * Includes digits 0-9, asterisk (*), and pound (#) characters.
+ */
+export type DTMFDigit =
+  | '0'
+  | '1'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | '*'
+  | '#';

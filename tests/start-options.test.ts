@@ -273,6 +273,41 @@ describe('StartOptions - New Parameters', () => {
     });
   });
 
+  describe('avatarContainerSelector Parameter', () => {
+    test('should accept avatarContainerSelector as a CSS selector string', async () => {
+      await expect(
+        voiceAgent.start({
+          agentId: 'test-agent',
+          avatarContainerSelector: '#avatar-container',
+        })
+      ).resolves.not.toThrow();
+    });
+
+    test('should work without avatarContainerSelector (optional)', async () => {
+      await expect(
+        voiceAgent.start({
+          agentId: 'test-agent',
+        })
+      ).resolves.not.toThrow();
+    });
+
+    test('should accept various valid CSS selector formats', async () => {
+      const selectors = [
+        '#avatar-container',
+        '.agent-video-wrapper',
+        '[data-testid="avatar"]',
+        'div.video-container',
+      ];
+
+      for (const avatarContainerSelector of selectors) {
+        await expect(
+          voiceAgent.start({ agentId: 'test-agent', avatarContainerSelector })
+        ).resolves.not.toThrow();
+        await voiceAgent.end();
+      }
+    });
+  });
+
   describe('Combined Parameters', () => {
     test('should accept all new parameters together', async () => {
       await expect(
@@ -289,6 +324,7 @@ describe('StartOptions - New Parameters', () => {
             default: 1000,
           },
           disableWakeLock: false,
+          avatarContainerSelector: '#avatar',
         })
       ).resolves.not.toThrow();
     });
