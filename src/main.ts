@@ -18,6 +18,7 @@ import LiveKitManager, {
   type PerformanceMetricsResult,
   type TrackStatsResult,
 } from './classes/livekit-manager';
+import { LIVEKIT_CHAT_TOPIC } from './classes/livekit-tool-registry';
 import ScreenWakeLock from './classes/screen-wake-lock';
 import type {
   AudioCaptureCallback,
@@ -25,6 +26,7 @@ import type {
   ConnectionQualityData,
   DTMFDigit,
   LiveKitTokenPayload,
+  ReceivedMessage,
   TrackSubscriptionData,
   TrackUnsubscriptionData,
 } from './classes/types';
@@ -42,6 +44,8 @@ export type {
   AudioCaptureOptions,
   AudioCaptureSource,
   DTMFDigit,
+  MessageRole,
+  ReceivedMessage,
 } from './classes/types';
 
 /**
@@ -51,11 +55,70 @@ export type {
 class HamsaApiError extends Error {
   /** Machine-readable error key for i18n or programmatic handling */
   readonly messageKey?: string;
+  /** The HTTP status the API answered with, when the error came from it. */
+  readonly status?: number;
+  /**
+   * Details the API sent with the error, for example `{ environment: 'staging' }`
+   * with `EnvironmentNotDeployed`.
+   */
+  readonly params?: Record<string, unknown>;
+  /** Seconds to wait before trying again, with `ApiKeyRateLimited`. */
+  readonly retryAfter?: number;
 
-  constructor(message: string, messageKey?: string) {
+  constructor(
+    message: string,
+    messageKey?: string,
+    details: {
+      status?: number;
+      params?: Record<string, unknown>;
+      retryAfter?: number;
+    } = {}
+  ) {
     super(message);
     this.name = 'HamsaApiError';
     this.messageKey = messageKey;
+    this.status = details.status;
+    this.params = details.params;
+    this.retryAfter = details.retryAfter;
+  }
+}
+
+/** The longest `callerKey` the backend accepts. */
+const MAX_CALLER_KEY_LENGTH = 200;
+
+/**
+ * What a refused start means (the public-key mint, or the call start that
+ * redeems a token), in a sentence that says what to do. The API's own
+ * message is kept for anything not listed here.
+ */
+function mintRefusal(
+  messageKey: string | undefined,
+  params: Record<string, unknown> = {},
+  retryAfter?: number
+): string | undefined {
+  const environment =
+    typeof params.environment === 'string' ? params.environment : 'its';
+  switch (messageKey) {
+    case 'EnvironmentNotDeployed':
+      return `This public key is for ${environment}, and ${environment} runs nothing for this agent yet. Deploy a version to ${environment}, or use the key for another environment.`;
+    case 'KeyNotForAgent':
+      return 'This public key is limited to other agents. Allow this agent on the key, or use another key.';
+    case 'ApiKeyRateLimited':
+      return Number.isFinite(retryAfter)
+        ? `Too many calls started with this key in a minute. Try again in ${retryAfter} seconds.`
+        : 'Too many calls started with this key in a minute. Try again shortly.';
+    case 'KeyRotated':
+      return 'This key value was replaced by a newer one. Use the current value from the API keys page.';
+    case 'PublicKeyFixedEnvironment':
+      return 'A public key always runs what its own environment runs, so versionRef and environmentId cannot be used with it.';
+    case 'CallTokenSessionOnly':
+      return 'This key cannot start calls from a page. Use a public key (pk_…).';
+    case 'CallTokenInvalid':
+      return 'This call token was already used, or has expired: a token lives about 30 seconds and starts one call. Get a new one for each call.';
+    case 'CallTokenRequired':
+      return 'An API key cannot choose a version or an environment. Use a public key, or have your server mint a call token with a secret key.';
+    default:
+      return;
   }
 }
 
@@ -93,6 +156,19 @@ type HamsaVoiceAgentConfig = {
   LIVEKIT_URL?: string;
   /** Enable debug logging for troubleshooting. Defaults to false */
   debug?: boolean;
+  /**
+   * A public key (`pk_…`) from the Hamsa dashboard's API keys page.
+   *
+   * Safe to put in a web page or an app: it can only start calls, and only in
+   * the environment it was made for (dev, staging or prod), running what that
+   * environment runs with its values. With it, `start()` gets a call token
+   * itself and starts the call with it; nothing else is needed.
+   *
+   * Never pass a secret key (`sk_…`) here, or anywhere in a page: secret keys
+   * stay on your server, which mints call tokens for the page (see
+   * `StartOptions.callToken`).
+   */
+  publicKey?: string;
 };
 
 /**
@@ -114,13 +190,98 @@ type StartOptions = {
   /** Unique identifier of the voice agent to start (from Hamsa dashboard) */
   agentId: string;
   /**
+   * Which version of the agent this conversation should run.
+   *
+   * A published version id, or `"draft"` for the unpublished working copy.
+   * Omit it to run what prod serves; the backend then behaves exactly as it
+   * always has, which is why nothing is sent on the wire unless a caller asks
+   * for it. (`"latest"` is no longer accepted.)
+   *
+   * An environment holds a published version, so naming an environment is a
+   * complete answer: `prod` runs whatever is published there. Version ids are
+   * the escape hatch for the rare case rather than the everyday interface.
+   */
+  versionRef?: string;
+  /**
+   * Which environment's values to resolve, overriding the one the chosen
+   * version is published into.
+   *
+   * Absent is the normal case and means the values follow the version, which
+   * is what every caller integrating this SDK wants: `versionRef: 'prod'`
+   * already implies prod's values.
+   *
+   * This exists for one workflow. An operator testing a specific version
+   * against a specific environment's values, deliberately, for their own call.
+   * Reading an old version against `staging` values is a real thing to want,
+   * and without this the only way to reach it is to publish something.
+   *
+   * There was deliberately no such option before, on the grounds that it would
+   * let a call disagree with its own version. That was right while an
+   * environment could not hold a version: naming one said which values to use
+   * while saying nothing about which agent to run, so the two could contradict
+   * each other silently. Now the default follows the version and the
+   * disagreement is only ever something a human asked for.
+   *
+   * Affects this call alone. Nothing is persisted and no other caller is
+   * touched.
+   */
+  environmentId?: string;
+  /**
+   * A short-lived call token, minted server-side, to start this call with
+   * instead of a key: the token itself, or a function that gets one.
+   *
+   * With a secret key, your server mints the token
+   * (`POST /v1/voice-agents/call-token` with `Authorization: Token sk_…`) and
+   * the page asks it for one. Pass a function and the SDK calls it as the call
+   * starts, so the token (which lives about 30 seconds and starts one call) is
+   * fresh when it is used:
+   *
+   * ```js
+   * agent.start({
+   *   agentId,
+   *   callToken: () =>
+   *     fetch('/my-server/hamsa-token').then((r) => r.json()).then((d) => d.callToken),
+   * });
+   * ```
+   *
+   * The token already knows which agent, version and environment it runs, so
+   * `versionRef` and `environmentId` are not sent next to it. It is sent as
+   * `Authorization: CallToken <token>`. A token wins over a public key or an
+   * API key given to the constructor.
+   */
+  callToken?: string | (() => string | Promise<string>);
+  /**
+   * A stable id for your end user (1 to 200 characters), so an A/B test keeps
+   * them on the same version for as long as the split lasts.
+   *
+   * During a split, each call is assigned a version by weight. Phone callers
+   * are kept on one side by their number; a web call has no number, so
+   * without this every call is assigned on its own: weighted, but not sticky.
+   * Use something that stays the same for the person across visits, such as
+   * your own user id, and never anything secret.
+   *
+   * Sent once, when the call starts; the rest of the call reuses the version
+   * chosen then.
+   */
+  callerKey?: string;
+  /**
    * Optional parameters to pass to the agent for conversation customization
    * These can be referenced in agent prompts using {{parameter_name}} syntax
    * @example { userName: "John", orderNumber: "12345", userTier: "premium" }
    */
   params?: Record<string, unknown>;
-  /** Whether to enable voice interactions. If false, agent runs in text-only mode */
+  /**
+   * Turns on page tools for this call: the `tools` registered here, which run
+   * in the page (opening a cart, for example) rather than calling an HTTP
+   * endpoint. A voice call does not need it.
+   */
   voiceEnablement?: boolean;
+  /**
+   * Whether the conversation runs in chat-only mode (no audio media).
+   * When true, the SDK requests a chat-only session from the backend via the
+   * participant-token and conversation-init endpoints.
+   */
+  isChatOnly?: boolean;
   /** Array of client-side tools that the agent can call during conversations */
   tools?: Tool[];
   /** Optional user identifier for tracking and analytics */
@@ -296,6 +457,28 @@ type HamsaVoiceAgentEvents = {
   transcriptionReceived: (text: string) => void;
   /** Emitted when agent response is received */
   answerReceived: (text: string) => void;
+  /**
+   * Emitted for every conversation message (agent reply or user transcription)
+   * with structured, streaming-aware metadata (id, role, isFinal, timestamp).
+   * Use this to drive a chat UI; prefer it over the plain-string
+   * `answerReceived`/`transcriptionReceived` events when rendering message bubbles.
+   *
+   * Note: this is dual-sourced (chat text streams AND voice transcriptions).
+   * For a chat-only integration, prefer {@link chatMessageReceived}.
+   */
+  messageReceived: (message: ReceivedMessage) => void;
+  /**
+   * Emitted only for chat messages received on the chat text-stream channel
+   * (`lk.chat`) — agent replies and the greeting in chat-only sessions.
+   * Same `ReceivedMessage` shape (stable id for in-place updates, streaming
+   * partials with `isFinal: false` followed by a final `isFinal: true`).
+   *
+   * Unlike {@link messageReceived}, this never fires for voice transcriptions,
+   * so it is the deterministic event for chat UIs. Pair with `agentStateChanged`
+   * for a typing indicator. In chat-only sessions, `answerReceived`,
+   * `transcriptionReceived`, and audio events do not fire.
+   */
+  chatMessageReceived: (message: ReceivedMessage) => void;
   /** Emitted when agent starts speaking */
   speaking: () => void;
   /** Emitted when agent is listening */
@@ -304,6 +487,8 @@ type HamsaVoiceAgentEvents = {
   agentStateChanged: (state: AgentState) => void;
   /** Emitted when a DTMF digit is successfully sent */
   dtmfSent: (digit: DTMFDigit) => void;
+  /** Emitted when a chat message is successfully sent to the agent */
+  messageSent: (text: string) => void;
 
   // Error events
   /** Emitted when an error occurs */
@@ -477,8 +662,17 @@ class HamsaVoiceAgent extends EventEmitter {
   /** Internal LiveKit manager instance for WebRTC communication */
   liveKitManager: LiveKitManager | null = null;
 
-  /** Hamsa API key for authentication */
-  apiKey: string;
+  /**
+   * Hamsa API key for authentication. Null when calls are started with a call
+   * token instead (see `StartOptions.callToken`).
+   */
+  apiKey: string | null;
+
+  /**
+   * The public key (`pk_…`) calls start with, when one was given: `start()`
+   * mints a call token with it. Null otherwise.
+   */
+  publicKey: string | null;
 
   /** Base URL for Hamsa API endpoints */
   API_URL: string;
@@ -504,7 +698,9 @@ class HamsaVoiceAgent extends EventEmitter {
   /**
    * Creates a new HamsaVoiceAgent instance
    *
-   * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com)
+   * @param apiKey - Your Hamsa API key (get from https://dashboard.tryhamsa.com).
+   *   Leave it out, passing the config first, when every call starts with a
+   *   call token: `new HamsaVoiceAgent({ region: 'eu' })`.
    * @param config - Optional configuration settings
    * @param config.region - Deployment region ('eu' | 'uae'). Defaults to 'eu'.
    * @param config.API_URL - Custom API endpoint URL. Overrides the region default.
@@ -523,29 +719,69 @@ class HamsaVoiceAgent extends EventEmitter {
    *   API_URL: 'https://custom-api.example.com',
    *   LIVEKIT_URL: 'wss://custom-rtc.example.com'
    * });
-   * ```
    *
-   * @throws {Error} If apiKey is not provided or invalid
+   * // A web page or app: a public key, and nothing else
+   * const agent = new HamsaVoiceAgent({ publicKey: 'pk_…' });
+   * await agent.start({ agentId });
+   *
+   * // A secret key on your server: the page gets each call's token from it
+   * const agent = new HamsaVoiceAgent({ region: 'eu' });
+   * await agent.start({ agentId, callToken: () => getTokenFromMyServer() });
+   * ```
    */
   constructor(
-    apiKey: string,
-    {
+    apiKeyOrConfig?: string | HamsaVoiceAgentConfig,
+    config: HamsaVoiceAgentConfig = {}
+  ) {
+    super();
+    const keyless =
+      typeof apiKeyOrConfig === 'object' && apiKeyOrConfig !== null;
+    const {
       region = 'eu',
       API_URL,
       LIVEKIT_URL,
       debug = false,
-    }: HamsaVoiceAgentConfig = {}
-  ) {
-    super();
+      publicKey,
+    } = keyless ? apiKeyOrConfig : config;
     const regionDefaults = REGION_CONFIG[region];
+    const apiKey = keyless ? null : (apiKeyOrConfig ?? null) || null;
+    HamsaVoiceAgent.#refuseMisplacedKeys(apiKey, publicKey);
     this.liveKitManager = null;
     this.apiKey = apiKey;
+    this.publicKey = publicKey || null;
     this.API_URL = API_URL ?? regionDefaults.API_URL;
     this.LIVEKIT_URL = LIVEKIT_URL ?? regionDefaults.LIVEKIT_URL;
     this.debug = debug;
     this.logger = createDebugLogger(debug);
     this.jobId = null;
     this.wakeLockManager = new ScreenWakeLock();
+  }
+
+  /**
+   * A secret key never belongs in a page, and a public key goes in
+   * `publicKey`. Both mistakes are caught here, before any request, with a
+   * sentence that says what to do instead.
+   */
+  static #refuseMisplacedKeys(apiKey: string | null, publicKey?: string) {
+    const inBrowser = typeof window !== 'undefined';
+    if (
+      inBrowser &&
+      (apiKey?.startsWith('sk_') || publicKey?.startsWith('sk_'))
+    ) {
+      throw new Error(
+        'A secret key (sk_…) must stay on your server, never in a web page or an app. Use a public key (pk_…) in the page, or have your server mint call tokens and pass them as callToken.'
+      );
+    }
+    if (publicKey && !publicKey.startsWith('pk_')) {
+      throw new Error(
+        'publicKey must be a public key, starting with pk_. Find it on the API keys page of the Hamsa dashboard.'
+      );
+    }
+    if (apiKey?.startsWith('pk_')) {
+      throw new Error(
+        "This is a public key: pass it as publicKey, new HamsaVoiceAgent({ publicKey: 'pk_…' })."
+      );
+    }
   }
 
   /**
@@ -892,6 +1128,82 @@ class HamsaVoiceAgent extends EventEmitter {
   }
 
   /**
+   * Sends a text chat message to the agent
+   *
+   * Publishes the user's typed message to the agent over LiveKit's text-stream
+   * channel ({@link LIVEKIT_CHAT_TOPIC}). Use this to drive a text/chat UI,
+   * typically alongside a chat-only session started with `start({ isChatOnly: true })`.
+   *
+   * The agent's reply arrives asynchronously through the `answerReceived` event.
+   * This method does not return the reply.
+   *
+   * @param text - The message to send. Must be a non-empty string.
+   * @throws {Error} If called when not connected (no active session)
+   * @throws {Error} If `text` is empty or not a string
+   * @fires messageSent When the message is successfully sent to the agent
+   *
+   * @example
+   * ```typescript
+   * await agent.start({ agentId: 'support_agent', isChatOnly: true });
+   *
+   * // Render the agent's replies
+   * agent.on('answerReceived', (reply) => appendToChat('agent', reply));
+   *
+   * // Send the user's typed message
+   * sendButton.onclick = async () => {
+   *   const text = input.value;
+   *   appendToChat('user', text);
+   *   await agent.sendMessage(text);
+   * };
+   * ```
+   */
+  async sendMessage(text: string): Promise<void> {
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      throw new Error('Cannot send message: text must be a non-empty string.');
+    }
+
+    const room = this.liveKitManager?.connection?.room;
+    if (!(this.liveKitManager?.isConnected && room?.localParticipant)) {
+      throw new Error(
+        'Cannot send message: not connected to agent. Call start() first.'
+      );
+    }
+
+    const TEXT_PREVIEW_LENGTH = 50;
+    this.logger.log('Sending chat message', {
+      source: 'HamsaVoiceAgent',
+      error: {
+        length: text.length,
+        preview: text.substring(0, TEXT_PREVIEW_LENGTH),
+        topic: LIVEKIT_CHAT_TOPIC,
+      },
+    });
+
+    try {
+      await room.localParticipant.sendText(text, {
+        topic: LIVEKIT_CHAT_TOPIC,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send chat message', {
+        source: 'HamsaVoiceAgent',
+        error,
+      });
+      this.emit(
+        'error',
+        error instanceof Error ? error : new Error(String(error))
+      );
+      throw error;
+    }
+
+    this.logger.log('Chat message sent successfully', {
+      source: 'HamsaVoiceAgent',
+    });
+
+    // Emit event to notify listeners (e.g. for optimistic UI / local echo)
+    this.emit('messageSent', text);
+  }
+
+  /**
    * Gets frequency data from the user's microphone input
    *
    * Returns frequency domain data for audio visualization and analysis.
@@ -1094,7 +1406,7 @@ class HamsaVoiceAgent extends EventEmitter {
    * @param options - Configuration options for the conversation
    * @param options.agentId - Unique identifier of the voice agent (from Hamsa dashboard)
    * @param options.params - Parameters to customize the conversation context
-   * @param options.voiceEnablement - Enable voice interactions (default: false for text-only)
+   * @param options.voiceEnablement - Turn on page tools (`tools` that run in the page); not needed for voice
    * @param options.tools - Client-side tools available to the agent
    *
    * @throws {Error} Authentication failures, network errors, or invalid configuration
@@ -1158,8 +1470,13 @@ class HamsaVoiceAgent extends EventEmitter {
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Method sets up multiple event listeners with logging - refactoring would split event handling logic
   async start({
     agentId,
+    versionRef,
+    environmentId,
+    callToken,
+    callerKey,
     params = {},
     voiceEnablement = false,
+    isChatOnly = false,
     tools = [],
     userId: _userId,
     preferHeadphonesForIosDevices: _preferHeadphonesForIosDevices = false,
@@ -1188,12 +1505,41 @@ class HamsaVoiceAgent extends EventEmitter {
         },
       });
 
-      const accessToken = await this.#initializeLiveKitConversation(
+      if (
+        callerKey !== undefined &&
+        (typeof callerKey !== 'string' ||
+          callerKey.length < 1 ||
+          callerKey.length > MAX_CALLER_KEY_LENGTH)
+      ) {
+        throw new Error(
+          'Cannot start a call: callerKey must be a string of 1 to 200 characters.'
+        );
+      }
+
+      // A token given (or fetched by the function given), else one minted
+      // with the public key, else none: the API key starts the call as before.
+      const token = await this.#resolveCallToken({
         agentId,
+        callToken,
+        isChatOnly,
+        callerKey,
+        versionRef,
+        environmentId,
+      });
+
+      const accessToken = await this.#initializeLiveKitConversation({
+        voiceAgentId: agentId,
+        callerKey,
+        // A call token already decides both; the backend ignores them next to
+        // one, so they are not sent at all.
+        versionRef: token ? undefined : versionRef,
+        environmentId: token ? undefined : environmentId,
+        authorization: this.#authorizationFor(token),
         params,
         voiceEnablement,
-        tools
-      );
+        tools,
+        isChatOnly,
+      });
 
       // Create LiveKitManager instance
       this.logger.log('Creating LiveKitManager instance', {
@@ -1209,7 +1555,7 @@ class HamsaVoiceAgent extends EventEmitter {
         this.LIVEKIT_URL,
         accessToken,
         tools,
-        { debug: this.debug, avatarContainerSelector }
+        { debug: this.debug, avatarContainerSelector, isChatOnly }
       );
 
       this.logger.log('LiveKitManager created, setting up event listeners', {
@@ -1278,6 +1624,12 @@ class HamsaVoiceAgent extends EventEmitter {
             },
           });
           this.emit('answerReceived', answer);
+        })
+        .on('messageReceived', (message) => {
+          this.emit('messageReceived', message);
+        })
+        .on('chatMessageReceived', (message) => {
+          this.emit('chatMessageReceived', message);
         })
         .on('speaking', () => {
           this.logger.log('Agent started speaking', {
@@ -1505,20 +1857,22 @@ class HamsaVoiceAgent extends EventEmitter {
         },
       });
 
+      // HamsaApiError as it is, to keep messageKey; anything else with context.
+      const reported =
+        error instanceof HamsaApiError
+          ? error
+          : new Error(
+              `Failed to start call: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
       if (this.listenerCount('error') > 0) {
-        // Forward HamsaApiError instances directly to preserve messageKey
-        if (error instanceof HamsaApiError) {
-          this.emit('error', error);
-        } else {
-          // For other errors, wrap with context
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          this.emit(
-            'error',
-            new Error(`Failed to start call: ${errorMessage}`)
-          );
-        }
+        this.emit('error', reported);
+        return;
       }
+      // Nobody listens for `error`: without this the call would fail silently,
+      // start() resolving as if it had started.
+      throw reported;
     }
   }
 
@@ -1768,6 +2122,14 @@ class HamsaVoiceAgent extends EventEmitter {
       );
     }
 
+    if (!this.apiKey) {
+      // A call token starts one call and is spent doing it; reading the job
+      // afterwards is a server-side job for a real credential.
+      throw new Error(
+        'Cannot fetch job details without an API key. A call token only starts a call.'
+      );
+    }
+
     const url = `${this.API_URL}/v1/voice-agents/conversation/${this.jobId}`;
     const headers = {
       Authorization: `Token ${this.apiKey}`,
@@ -1815,27 +2177,185 @@ class HamsaVoiceAgent extends EventEmitter {
    * @private
    * @param voiceAgentId - The voice agent ID.
    * @param params - Additional parameters.
-   * @param voiceEnablement - Flag to enable voice features.
+   * @param voiceEnablement - Turns on page tools for the call.
    * @param tools - Array of tools/functions to be used.
    * @returns The LiveKit access token or null if failed.
    */
-  async #initializeLiveKitConversation(
-    voiceAgentId: string,
-    params: Record<string, unknown>,
-    voiceEnablement: boolean,
-    tools: Tool[]
-  ): Promise<string> {
+  /**
+   * The `Authorization` header a call starts with: the call token when one is
+   * given, otherwise the API key. Neither is an error before any request is
+   * made, so a misconfigured page fails with a message rather than a 401.
+   */
+  #authorizationFor(callToken?: string): string {
+    if (callToken) {
+      return `CallToken ${callToken}`;
+    }
+    if (this.apiKey) {
+      return `Token ${this.apiKey}`;
+    }
+    throw new Error(
+      'Cannot start a call: no key and no callToken. Pass a publicKey to the constructor, new HamsaVoiceAgent({ publicKey }), or a callToken to start().'
+    );
+  }
+
+  /**
+   * The call token this call starts with: the one given, the one the given
+   * function returns (called now, so it is fresh), or one minted with the
+   * public key. Undefined when there is none and an API key starts the call.
+   */
+  async #resolveCallToken(options: {
+    agentId: string;
+    callToken?: StartOptions['callToken'];
+    isChatOnly: boolean;
+    callerKey?: string;
+    versionRef?: string;
+    environmentId?: string;
+  }): Promise<string | undefined> {
+    const {
+      agentId,
+      callToken,
+      isChatOnly,
+      callerKey,
+      versionRef,
+      environmentId,
+    } = options;
+    if (typeof callToken === 'function') {
+      let token: unknown;
+      try {
+        token = await callToken();
+      } catch (error) {
+        throw new Error(
+          `Cannot start a call: the callToken function failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+      if (typeof token !== 'string' || !token) {
+        throw new Error(
+          'Cannot start a call: the callToken function returned no token. It should resolve to the callToken your server minted.'
+        );
+      }
+      return token;
+    }
+    if (callToken) {
+      return callToken;
+    }
+    if (!this.publicKey) {
+      return;
+    }
+    // The key is the environment: nothing the page says can move it.
+    if (versionRef || environmentId) {
+      throw new HamsaApiError(
+        'A public key always runs what its own environment runs, so versionRef and environmentId cannot be used with it. To choose a version or an environment, mint the call token on your server with a secret key.',
+        'PublicKeyFixedEnvironment'
+      );
+    }
+    return await this.#mintWithPublicKey({ agentId, isChatOnly, callerKey });
+  }
+
+  /**
+   * Mints a call token with the public key: for the key's environment, this
+   * agent, and (with `callerKey`) the same side of an A/B test every time.
+   */
+  async #mintWithPublicKey(options: {
+    agentId: string;
+    isChatOnly: boolean;
+    callerKey?: string;
+  }): Promise<string> {
+    const { agentId, isChatOnly, callerKey } = options;
+    this.logger.log('Minting a call token with the public key', {
+      source: 'HamsaVoiceAgent',
+      error: { agentId, isChatOnly },
+    });
+    const response = await fetch(`${this.API_URL}/v1/voice-agents/call-token`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${this.publicKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        voiceAgentId: agentId,
+        isChatOnly,
+        ...(callerKey ? { callerKey } : {}),
+      }),
+    });
+    const text = await response.text();
+    let body: {
+      message?: string;
+      messageKey?: string;
+      params?: Record<string, unknown>;
+      data?: { callToken?: string };
+    } = {};
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // Not JSON: the status says what happened.
+    }
+    if (!response.ok) {
+      // No header (or one the browser may not read, cross-origin) is unknown,
+      // not 0: Number(null) would tell the page to retry at once.
+      const retryHeader = response.headers?.get?.('Retry-After');
+      const retryAfter = retryHeader ? Number(retryHeader) : Number.NaN;
+      throw new HamsaApiError(
+        mintRefusal(body.messageKey, body.params, retryAfter) ??
+          body.message ??
+          `Could not start the call (${response.status})`,
+        body.messageKey,
+        {
+          status: response.status,
+          params: body.params,
+          retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
+        }
+      );
+    }
+    const token = body.data?.callToken;
+    if (!token) {
+      throw new HamsaApiError(
+        'The call token response had no callToken.',
+        undefined,
+        { status: response.status }
+      );
+    }
+    return token;
+  }
+
+  async #initializeLiveKitConversation(options: {
+    authorization: string;
+    voiceAgentId: string;
+    callerKey?: string;
+    versionRef?: string;
+    environmentId?: string;
+    params: Record<string, unknown>;
+    voiceEnablement: boolean;
+    tools: Tool[];
+    isChatOnly: boolean;
+  }): Promise<string> {
+    const {
+      authorization,
+      voiceAgentId,
+      callerKey,
+      versionRef,
+      environmentId,
+      params,
+      voiceEnablement,
+      tools,
+      isChatOnly,
+    } = options;
     const headers = {
-      Authorization: `Token ${this.apiKey}`,
+      Authorization: authorization,
       'Content-Type': 'application/json',
     };
 
     // Step 1: Get LiveKit participant token
-    const tokenData = await this.#fetchParticipantToken(
+    const tokenData = await this.#fetchParticipantToken({
       voiceAgentId,
       params,
-      headers
-    );
+      headers,
+      isChatOnly,
+      versionRef,
+      environmentId,
+      callerKey,
+    });
     const liveKitAccessToken = tokenData.liveKitAccessToken;
     const jobIdFromToken = this.#resolveJobIdFromToken(
       liveKitAccessToken,
@@ -1846,12 +2366,15 @@ class HamsaVoiceAgent extends EventEmitter {
     // Step 2: Initialize conversation with token
     await this.#initializeConversation({
       voiceAgentId,
+      versionRef,
+      environmentId,
       params,
       voiceEnablement,
       tools,
       headers,
       jobIdFromToken,
       tokenData,
+      isChatOnly,
     });
 
     // Store resolved jobId for downstream job lookups
@@ -1873,7 +2396,12 @@ class HamsaVoiceAgent extends EventEmitter {
       const errorJson = JSON.parse(errorText);
       if (errorJson.message) {
         // Return both message and messageKey separately for SDK users
-        throw new HamsaApiError(errorJson.message, errorJson.messageKey);
+        throw new HamsaApiError(
+          mintRefusal(errorJson.messageKey, errorJson.params) ??
+            errorJson.message,
+          errorJson.messageKey,
+          { status: response.status, params: errorJson.params }
+        );
       }
     } catch (jsonError) {
       // If not JSON or no message field, use the raw error text with status info
@@ -1887,17 +2415,32 @@ class HamsaVoiceAgent extends EventEmitter {
       ? `${response.status} ${response.statusText} - ${errorText}`
       : errorText;
 
-    throw new HamsaApiError(errorMessage);
+    throw new HamsaApiError(errorMessage, undefined, {
+      status: response.status,
+    });
   }
 
   /**
    * Fetches the LiveKit participant token from the API
    */
-  async #fetchParticipantToken(
-    voiceAgentId: string,
-    params: Record<string, unknown>,
-    headers: Record<string, string>
-  ): Promise<{ liveKitAccessToken: string; jobId?: string }> {
+  async #fetchParticipantToken(options: {
+    voiceAgentId: string;
+    params: Record<string, unknown>;
+    headers: Record<string, string>;
+    isChatOnly: boolean;
+    versionRef?: string;
+    environmentId?: string;
+    callerKey?: string;
+  }): Promise<{ liveKitAccessToken: string; jobId?: string }> {
+    const {
+      voiceAgentId,
+      params,
+      headers,
+      isChatOnly,
+      versionRef,
+      environmentId,
+      callerKey,
+    } = options;
     this.logger.log('Fetching participant token from API', {
       source: 'HamsaVoiceAgent',
       error: {
@@ -1913,7 +2456,17 @@ class HamsaVoiceAgent extends EventEmitter {
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ voiceAgentId, params }),
+        // Spread rather than always-present: omitting it keeps the request
+        // byte-identical to what every existing caller already sends.
+        body: JSON.stringify({
+          voiceAgentId,
+          params,
+          isChatOnly,
+          ...(versionRef ? { versionRef } : {}),
+          ...(environmentId ? { environmentId } : {}),
+          // Only here: conversation-init reuses the version this request chose.
+          ...(callerKey ? { callerKey } : {}),
+        }),
       }
     );
 
@@ -1969,21 +2522,27 @@ class HamsaVoiceAgent extends EventEmitter {
    */
   async #initializeConversation(options: {
     voiceAgentId: string;
+    versionRef?: string;
+    environmentId?: string;
     params: Record<string, unknown>;
     voiceEnablement: boolean;
     tools: Tool[];
     headers: Record<string, string>;
     jobIdFromToken: string | null;
     tokenData: { jobId?: string };
+    isChatOnly: boolean;
   }): Promise<void> {
     const {
       voiceAgentId,
+      versionRef,
+      environmentId,
       params,
       voiceEnablement,
       tools,
       headers,
       jobIdFromToken,
       tokenData,
+      isChatOnly,
     } = options;
     const llmtools =
       tools?.length > 0 ? this.#convertToolsToLLMTools(tools) : [];
@@ -1995,7 +2554,13 @@ class HamsaVoiceAgent extends EventEmitter {
       params,
       // Backend expects jobId derived from the token metadata when available
       jobId: jobIdFromToken ?? tokenData.jobId ?? voiceAgentId,
-      channelType: 'Web',
+      // Chat-only sessions must be tagged as a chat channel so the backend agent
+      // runs in chat mode (publishes replies on `lk.chat`) and the conversation
+      // is recorded under the Chat channel rather than Web.
+      channelType: isChatOnly ? 'Chat Agent' : 'Web',
+      isChatOnly,
+      ...(versionRef ? { versionRef } : {}),
+      ...(environmentId ? { environmentId } : {}),
     };
 
     this.logger.log('Initializing conversation with API', {
@@ -2006,6 +2571,7 @@ class HamsaVoiceAgent extends EventEmitter {
         voiceEnablement,
         jobId: conversationBody.jobId,
         channelType: conversationBody.channelType,
+        isChatOnly,
       },
     });
 

@@ -20,11 +20,13 @@ First, import the package in your code:
 import { HamsaVoiceAgent } from "@hamsa-ai/voice-agents-sdk";
 ```
 
-Initialize the SDK with your API key:
+Initialize the SDK with a public key (`pk_…`) from the API keys page of the Hamsa dashboard:
 
 ```javascript
-const agent = new HamsaVoiceAgent(API_KEY);
+const agent = new HamsaVoiceAgent({ publicKey: "pk_..." });
 ```
+
+A public key is made to sit in a web page or an app. To start calls through your own server instead, see [secret keys](#starting-calls-through-your-server-secret-keys). Using an API key from before public keys? See [Moving from an API key](#moving-from-an-api-key).
 
 ### Using via CDN
 
@@ -34,10 +36,10 @@ Include the script from a CDN:
 <script src="https://unpkg.com/@hamsa-ai/voice-agents-sdk@LATEST_VERSION/dist/index.umd.js"></script>
 ```
 
-Then, you can initialize the agent like this:
+The script puts the SDK on `window.HamsaVoiceAgent`, with the class inside it as `HamsaVoiceAgent.HamsaVoiceAgent` (and the error class as `HamsaVoiceAgent.HamsaApiError`):
 
 ```javascript
-const agent = new HamsaVoiceAgent("YOUR_API_KEY");
+const agent = new HamsaVoiceAgent.HamsaVoiceAgent({ publicKey: "pk_..." });
 
 agent.on("callStarted", ({ jobId }) => {
   console.log("Conversation has started! Job ID:", jobId);
@@ -60,7 +62,6 @@ agent.start({
     param1: "NAME",
     param2: "NAME2",
   },
-  voiceEnablement: true,
   userId: "user-123", // Optional user tracking
   preferHeadphonesForIosDevices: true, // iOS audio optimization
   connectionDelay: {
@@ -72,6 +73,87 @@ agent.start({
 ```
 
 When creating an agent, you can add parameters to your pre-defined values. For example, you can set your Greeting Message to: "Hello {{name}}, how can I help you today?" and pass the "name" as a parameter to use the correct name of the user.
+
+### Starting calls from your website or app: public keys
+
+Use a **public key** (`pk_…`) from the API keys page of the Hamsa dashboard. It is safe in a page or an app: it can only start calls, and only in the environment it was made for (dev, staging or prod), running what that environment runs with its values. Give the SDK the key and nothing else; `start()` gets a short-lived call token with it and starts the call:
+
+```javascript
+const agent = new HamsaVoiceAgent({ publicKey: "pk_..." });
+
+agent.start({ agentId: YOUR_AGENT_ID });
+```
+
+Use the staging key on your staging site and the prod key in production. A public key cannot choose a version or an environment (`versionRef` and `environmentId` are refused with it); for that, use a secret key.
+
+### Starting calls through your server: secret keys
+
+A **secret key** (`sk_…`) stays on your server, never in a page (the SDK refuses one in a browser). Your server mints a call token for each call, and the page gives the SDK a function that fetches it. The SDK calls the function as the call starts, so the token (which lives about 30 seconds and starts one call) is fresh:
+
+```javascript
+// Your server, with the secret key
+app.post("/hamsa/call-token", async (req, res) => {
+  const reply = await fetch("https://api.tryhamsa.com/v1/voice-agents/call-token", {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${process.env.HAMSA_SECRET_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ projectId: "YOUR_PROJECT_ID", voiceAgentId: "YOUR_AGENT_ID" }),
+  });
+  res.json((await reply.json()).data);
+});
+
+// Your page, holding no key
+const agent = new HamsaVoiceAgent();
+
+agent.start({
+  agentId: YOUR_AGENT_ID,
+  callToken: () =>
+    fetch("/hamsa/call-token", { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => d.callToken),
+});
+```
+
+Your server decides what the call runs: add `versionRef` (a version id, or `"draft"`) or `environmentId` to the mint. `callToken` also takes the token itself, for a page that already has one. With a token, `versionRef` and `environmentId` are not sent from the page: the token decides them. `getJobDetails()` needs an API key, since a token is spent starting the call.
+
+### When a call cannot start
+
+Refusals arrive on the `error` event as a `HamsaApiError` with a `messageKey`, the HTTP `status`, the API's `params` and a sentence that says what to do:
+
+| `messageKey` | What it means |
+| --- | --- |
+| `EnvironmentNotDeployed` | The key's environment runs nothing for this agent yet (`params.environment`). |
+| `KeyNotForAgent` | The key is limited to other agents. |
+| `ApiKeyRateLimited` | Too many calls with this key in a minute; `retryAfter` says how many seconds to wait. |
+| `KeyRotated` | The key value was replaced; use the current one. |
+| `PublicKeyFixedEnvironment` | `versionRef` or `environmentId` was passed with a public key. |
+| `CallTokenInvalid` | The call token was already used, or is older than about 30 seconds; get a new one for each call. |
+| `CallTokenRequired` | An API key asked for a version or an environment; use a public key, or a token from your server. |
+
+```javascript
+agent.on("error", (error) => {
+  if (error.messageKey === "ApiKeyRateLimited") retryIn(error.retryAfter);
+});
+```
+
+With no `error` listener, `start()` rejects with the same error instead, so a `try` around `await agent.start(...)` catches it.
+
+Already using an API key? It keeps working; see [Moving from an API key](#moving-from-an-api-key).
+
+### Keeping a caller on one version during an A/B test
+
+While an agent's prod runs an A/B test, each call is assigned a version by weight. Phone callers stay on one side by their number. A web call has no number, so pass `callerKey`, a stable id for your end user (1 to 200 characters), to keep them on the same version while the test lasts:
+
+```javascript
+agent.start({
+  agentId: YOUR_AGENT_ID,
+  callerKey: currentUser.id, // stable across visits, never a secret
+});
+```
+
+Without it, each web call is assigned on its own: weighted, but not sticky.
 
 ## Pause/Resume a Conversation
 
@@ -94,6 +176,58 @@ To end a conversation, simply call the "end" function:
 ```javascript
 agent.end();
 ```
+
+## Chat (Text) Conversations
+
+The SDK supports text-only chat sessions in addition to voice. In chat mode the
+SDK connects to the agent without requesting microphone access, sends the user's
+typed messages to the agent, and surfaces the agent's replies (including the
+greeting) as they stream in.
+
+Start a chat-only session by passing `isChatOnly: true` to `start()`:
+
+```javascript
+const agent = new HamsaVoiceAgent({ publicKey: "pk_..." });
+
+// Receive the agent's chat replies (streaming-aware)
+agent.on('chatMessageReceived', (message) => {
+  // message: { id, role: 'user' | 'agent', text, isFinal, timestamp }
+  // The same `id` is reused across streaming updates of one message, so you can
+  // update the same bubble in place; `isFinal` is false for partials, true when complete.
+  renderMessage(message);
+});
+
+// Optional: typing indicator while the agent composes a reply
+agent.on('agentStateChanged', (state) => {
+  setTyping(state === 'thinking' || state === 'speaking');
+});
+
+// Start the chat-only session
+await agent.start({ agentId: 'YOUR_AGENT_ID', isChatOnly: true });
+
+// Send the user's typed message (published on the chat channel)
+await agent.sendMessage('Hello, I need help with my order.');
+
+// End the session when done
+agent.end();
+```
+
+### Chat surface
+
+| API | Purpose |
+| --- | --- |
+| `start({ isChatOnly: true })` | Begin a text-only session (no microphone prompt). |
+| `sendMessage(text)` | Send the user's message to the agent. Emits `messageSent`. |
+| `chatMessageReceived` event | Agent chat replies + greeting, with `{ id, role, text, isFinal, timestamp }`. Fires **only** for chat — never for voice transcriptions. |
+| `agentStateChanged` event | Drive a typing indicator (`thinking` / `speaking`). |
+| `end()` | End the chat session. |
+
+> **Note:** Use `chatMessageReceived` for chat UIs — it is dedicated to chat and
+> deterministic. It surfaces the agent's text in chat-only sessions regardless of
+> the underlying delivery channel. The generic `messageReceived` event also fires
+> for chat, but it is dual-sourced (it additionally fires for voice
+> transcriptions), so prefer `chatMessageReceived`. In a chat-only session the
+> voice events (`answerReceived`, `transcriptionReceived`) and audio events do not fire.
 
 ## Advanced Audio Controls
 
@@ -211,7 +345,6 @@ The easiest way - just pass a callback to `start()`:
 // Dead simple - captures agent audio automatically
 await agent.start({
   agentId: 'agent-123',
-  voiceEnablement: true,
   onAudioData: (audioData) => {
     // Send to third-party service
     thirdPartyWebSocket.send(audioData);
@@ -233,7 +366,6 @@ Need more control? Use `captureAudio` options:
 ```javascript
 await agent.start({
   agentId: 'agent-123',
-  voiceEnablement: true,
   captureAudio: {
     source: 'both',       // Capture both agent and user
     format: 'pcm-f32',    // Raw PCM for processing
@@ -256,8 +388,7 @@ For advanced users who need runtime control:
 ```javascript
 // Start without capture
 await agent.start({
-  agentId: 'agent-123',
-  voiceEnablement: true
+  agentId: 'agent-123'
 });
 
 // Enable capture later, conditionally
@@ -534,6 +665,10 @@ agent.on("transcriptionReceived", (text) => {
 agent.on("answerReceived", (text) => {
   console.log("Agent answer received", text);
 });
+// Chat-only sessions: dedicated chat event (see "Chat (Text) Conversations")
+agent.on("chatMessageReceived", (message) => {
+  console.log("Chat message received", message); // { id, role, text, isFinal, timestamp }
+});
 ```
 
 ### Error Events
@@ -791,7 +926,8 @@ agent.on("customEvent", (eventType, eventData, metadata) => {
 The SDK accepts optional configuration parameters:
 
 ```javascript
-const agent = new HamsaVoiceAgent("YOUR_API_KEY", {
+const agent = new HamsaVoiceAgent({
+  publicKey: "pk_...",
   API_URL: "https://api.tryhamsa.com", // API endpoint (default)
 });
 ```
@@ -828,7 +964,37 @@ agent.start({
 });
 ```
 
+`voiceEnablement: true` turns on these page tools for the call: tools that run in the page (opening the cart, for example) rather than calling an HTTP endpoint. A voice call does not need it; leave it out when you register no tools.
+
 ## Migration from Previous Versions
+
+### Moving from an API key
+
+An API key passed as `new HamsaVoiceAgent(API_KEY)` keeps working: its calls reach what your agent runs in prod, as before. Move when you can. Anyone who opens your page can read a key in it, and an API key can do much more than start calls. A public key can only start calls, in the one environment it was made for.
+
+1. On the API keys page of the Hamsa dashboard, create a public key for prod, for your live site. You can limit it to some agents, and to your domains.
+2. Update the SDK: public keys need 0.6.4-beta.3 or later.
+3. Pass the key as `publicKey`. Options you already pass go in the same object:
+
+   ```javascript
+   // Before
+   const agent = new HamsaVoiceAgent(API_KEY, { region: "uae" });
+
+   // After
+   const agent = new HamsaVoiceAgent({ publicKey: "pk_...", region: "uae" });
+   ```
+
+   `start()` and everything after it stay the same.
+
+4. Once your site runs on the public key, delete the API key in the dashboard if nothing else uses it.
+
+What works differently:
+
+- **Staging and dev.** A public key reaches only its own environment. Give your staging site a staging key to try a version there before prod.
+- **Choosing a version.** A page cannot pass `versionRef` or `environmentId` with any key. To choose per call, mint call tokens on your server with a [secret key](#starting-calls-through-your-server-secret-keys).
+- **`getJobDetails()`** still needs an API key, so it belongs on your server.
+
+### Older versions of the SDK
 
 If you're upgrading from a previous version, see the [Migration Guide](./MIGRATION_GUIDE.md) for detailed instructions. Connection details are now automatically managed and no longer need to be configured.
 
@@ -858,7 +1024,7 @@ import {
 } from "@hamsa-ai/voice-agents-sdk";
 
 // All analytics methods return strongly typed data
-const agent = new HamsaVoiceAgent("API_KEY");
+const agent = new HamsaVoiceAgent({ publicKey: "pk_..." });
 
 // TypeScript will provide full autocomplete and type checking for all methods
 const connectionStats = agent.getConnectionStats(); // ConnectionStatsResult | null
@@ -896,7 +1062,7 @@ agent.enableAudioCapture({
 // Strongly typed start options with all advanced features
 await agent.start({
   agentId: "agent-id",
-  voiceEnablement: true,
+  voiceEnablement: true, // only with page tools (tools: [...])
   userId: "user-123",
   params: {
     userName: "John Doe",

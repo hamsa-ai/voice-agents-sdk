@@ -181,7 +181,29 @@
 import { EventEmitter } from 'events';
 import type { Room, RpcInvocationData } from 'livekit-client';
 import { createDebugLogger, type DebugLogger } from '../utils';
-import type { Tool } from './types';
+import type { MessageRole, ReceivedMessage, Tool } from './types';
+
+/**
+ * LiveKit text-stream topic used for chat messages.
+ *
+ * Both directions use this topic: the SDK publishes user messages here via
+ * `sendText`, and the agent publishes its replies here as text streams. The
+ * registry registers a handler on this topic to surface inbound agent messages
+ * as `messageReceived` events.
+ */
+export const LIVEKIT_CHAT_TOPIC = 'lk.chat';
+
+/**
+ * LiveKit text-stream topic the agent uses for transcription/response text.
+ *
+ * In chat-only sessions there is no audio subscription, so the normal
+ * `RoomEvent.TranscriptionReceived` event never fires — but the agent still
+ * publishes its text on this topic as a data-stream. The registry registers a
+ * text-stream handler here (chat-only) so those messages surface as
+ * `chatMessageReceived`. Voice sessions keep using `RoomEvent.TranscriptionReceived`
+ * and do NOT register this handler (it would double-emit).
+ */
+export const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
 
 /**
  * LiveKitToolRegistry class for client-side tool management and RPC handling
@@ -206,6 +228,15 @@ export class LiveKitToolRegistry extends EventEmitter {
 
   /** Debug logger instance for conditional logging */
   private readonly logger: DebugLogger;
+
+  /** Monotonic counter for synthesizing message ids when a segment lacks one */
+  private fallbackMessageIdCounter = 0;
+
+  /** Whether the session is text/chat-only (gates the lk.transcription handler) */
+  private readonly isChatOnly: boolean;
+
+  /** Topics whose chat text-stream handler is currently registered on the room */
+  private readonly registeredChatTopics = new Set<string>();
 
   /**
    * Creates a new LiveKitToolRegistry instance
@@ -233,10 +264,11 @@ export class LiveKitToolRegistry extends EventEmitter {
    * registry.setRoom(liveKitRoom);
    * ```
    */
-  constructor(tools: Tool[] = [], debug = false) {
+  constructor(tools: Tool[] = [], debug = false, isChatOnly = false) {
     super();
     this.tools = tools;
     this.logger = createDebugLogger(debug);
+    this.isChatOnly = isChatOnly;
   }
 
   /**
@@ -273,6 +305,86 @@ export class LiveKitToolRegistry extends EventEmitter {
     if (room && this.tools.length > 0) {
       this.registerTools();
     }
+
+    // Register the inbound chat text-stream handler so agent replies on
+    // LIVEKIT_CHAT_TOPIC are surfaced as messageReceived events.
+    if (room) {
+      this.registerChatStreamHandler(room);
+    }
+  }
+
+  /**
+   * Registers text-stream handlers to receive the agent's chat replies.
+   *
+   * The agent publishes its responses as LiveKit text streams. This registers a
+   * handler on {@link LIVEKIT_CHAT_TOPIC}, and — for chat-only sessions —
+   * additionally on {@link LIVEKIT_TRANSCRIPTION_TOPIC}, because chat-only never
+   * subscribes to audio and so never receives `RoomEvent.TranscriptionReceived`.
+   * Voice sessions skip the transcription topic (it would double-emit alongside
+   * the existing `RoomEvent.TranscriptionReceived` path).
+   *
+   * Each stream's chunks are concatenated and emitted via `chatMessageReceived`,
+   * streaming partials (`isFinal: false`) followed by a final message
+   * (`isFinal: true`). The stream id is reused as the message id so a chat UI
+   * can update the same bubble in place.
+   *
+   * Guarded per topic — `registerTextStreamHandler` throws if a handler already
+   * exists for the topic.
+   */
+  private registerChatStreamHandler(room: Room): void {
+    const topics = this.isChatOnly
+      ? [LIVEKIT_CHAT_TOPIC, LIVEKIT_TRANSCRIPTION_TOPIC]
+      : [LIVEKIT_CHAT_TOPIC];
+
+    for (const topic of topics) {
+      if (this.registeredChatTopics.has(topic)) {
+        continue;
+      }
+      try {
+        room.registerTextStreamHandler(
+          topic,
+          this.createChatStreamHandler(room)
+        );
+        this.registeredChatTopics.add(topic);
+        this.logger.log('Registered chat text-stream handler', {
+          source: 'LiveKitToolRegistry',
+          error: { topic },
+        });
+      } catch (error) {
+        this.logger.error('Failed to register chat text-stream handler', {
+          source: 'LiveKitToolRegistry',
+          error: { topic, error },
+        });
+      }
+    }
+  }
+
+  /**
+   * Builds a text-stream handler that concatenates streamed chunks and emits
+   * them as `chatMessageReceived` (streaming partials then a final message).
+   */
+  private createChatStreamHandler(room: Room) {
+    return async (
+      reader: {
+        info: { id: string };
+        [Symbol.asyncIterator](): AsyncIterator<string>;
+      },
+      participantInfo: { identity: string }
+    ) => {
+      const localIdentity = room.localParticipant?.identity;
+      const role: MessageRole =
+        participantInfo.identity === localIdentity ? 'user' : 'agent';
+      const id = reader.info.id;
+
+      let text = '';
+      // Sequential by nature: each chunk extends the message; emit a streaming
+      // partial as it arrives, then a final once the stream ends.
+      for await (const chunk of reader) {
+        text += chunk;
+        this.emitChatMessage({ id, role, text, isFinal: false });
+      }
+      this.emitChatMessage({ id, role, text, isFinal: true });
+    };
   }
 
   /**
@@ -644,7 +756,7 @@ export class LiveKitToolRegistry extends EventEmitter {
    * ```
    */
   handleTranscriptionReceived(
-    transcriptions: Array<{ text?: string; final?: boolean }>,
+    transcriptions: Array<{ id?: string; text?: string; final?: boolean }>,
     participantIdentity?: string
   ): void {
     try {
@@ -675,7 +787,8 @@ export class LiveKitToolRegistry extends EventEmitter {
       });
 
       // LiveKit transcriptions come as an array of segments
-      // Each segment has properties like text, final, etc.
+      // Each segment has properties like id, text, final, etc.
+      const role = isAgent ? 'agent' : 'user';
       for (const segment of transcriptions) {
         if (segment.text) {
           if (isAgent) {
@@ -712,6 +825,14 @@ export class LiveKitToolRegistry extends EventEmitter {
             );
             this.emit('transcriptionReceived', segment.text);
           }
+
+          // Also emit the structured, streaming-aware message for chat UIs.
+          this.emitMessageReceived({
+            id: segment.id,
+            role,
+            text: segment.text,
+            isFinal: segment.final ?? false,
+          });
         }
       }
     } catch (error) {
@@ -725,6 +846,85 @@ export class LiveKitToolRegistry extends EventEmitter {
       });
       // Ignore transcription processing errors
     }
+  }
+
+  /**
+   * Emits a structured, streaming-aware `messageReceived` event.
+   *
+   * Synthesizes a stable id when the source segment lacks one so consumers can
+   * still key the message, and stamps the observation time.
+   */
+  private buildReceivedMessage(message: {
+    id?: string;
+    role: MessageRole;
+    text: string;
+    isFinal: boolean;
+  }): ReceivedMessage {
+    let id = message.id;
+    if (!id) {
+      this.fallbackMessageIdCounter += 1;
+      id = `msg-${this.fallbackMessageIdCounter}`;
+    }
+
+    return {
+      id,
+      role: message.role,
+      text: message.text,
+      isFinal: message.isFinal,
+      timestamp: Date.now(),
+    };
+  }
+
+  private emitMessageReceived(message: {
+    id?: string;
+    role: MessageRole;
+    text: string;
+    isFinal: boolean;
+  }): void {
+    const payload = this.buildReceivedMessage(message);
+
+    this.logger.log('✅ Emitting messageReceived event', {
+      source: 'LiveKitToolRegistry',
+      error: {
+        id: payload.id,
+        role: payload.role,
+        isFinal: payload.isFinal,
+        textLength: payload.text.length,
+      },
+    });
+
+    this.emit('messageReceived', payload);
+  }
+
+  /**
+   * Emits a chat message originating from the {@link LIVEKIT_CHAT_TOPIC} stream.
+   *
+   * Fires the dedicated `chatMessageReceived` event — which fires only for real
+   * chat messages, never voice transcriptions — and, for backward
+   * compatibility, the generic `messageReceived` event with the same payload.
+   */
+  private emitChatMessage(message: {
+    id?: string;
+    role: MessageRole;
+    text: string;
+    isFinal: boolean;
+  }): void {
+    const payload = this.buildReceivedMessage(message);
+
+    this.logger.log('✅ Emitting chatMessageReceived event', {
+      source: 'LiveKitToolRegistry',
+      error: {
+        id: payload.id,
+        role: payload.role,
+        isFinal: payload.isFinal,
+        textLength: payload.text.length,
+      },
+    });
+
+    // Dedicated chat event (chat-only, deterministic for chat integrators)…
+    this.emit('chatMessageReceived', payload);
+    // …and the generic event, kept for backward compatibility.
+    this.emit('messageReceived', payload);
   }
 
   /**
@@ -827,7 +1027,18 @@ export class LiveKitToolRegistry extends EventEmitter {
    * ```
    */
   cleanup(): void {
-    // Tools are automatically unregistered when room disconnects
-    // No additional cleanup needed
+    // Tools are automatically unregistered when room disconnects.
+    // Unregister chat text-stream handlers so a fresh session can re-register.
+    for (const topic of this.registeredChatTopics) {
+      try {
+        this.room?.unregisterTextStreamHandler(topic);
+      } catch (error) {
+        this.logger.error('Failed to unregister chat text-stream handler', {
+          source: 'LiveKitToolRegistry',
+          error: { topic, error },
+        });
+      }
+    }
+    this.registeredChatTopics.clear();
   }
 }

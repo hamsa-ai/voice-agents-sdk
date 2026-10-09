@@ -1,6 +1,6 @@
 {
   "name": "@hamsa-ai/voice-agents-sdk",
-  "version": "0.5.8",
+  "version": "0.6.4-beta.5",
   "description": "Hamsa AI - Voice Agents JavaScript SDK",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -56,7 +56,7 @@
   "dependencies": {
     "events": "^3.3.0",
     "jwt-decode": "^4.0.0",
-    "livekit-client": "^2.18.0"
+    "livekit-client": "2.22.3"
   },
   "repository": {
     "type": "git",

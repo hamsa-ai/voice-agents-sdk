@@ -5,6 +5,9 @@
  */
 
 import { beforeEach, describe, expect, test } from '@jest/globals';
+import { RoomEvent } from 'livekit-client';
+import LiveKitManager from '../../src/classes/livekit-manager';
+import { extractEventHandler } from '../utils/livekit-mocks';
 import {
   setupTest,
   type TestContext,
@@ -159,6 +162,47 @@ describe('LiveKitManager - Connection Management', () => {
       await liveKitManager.connect();
 
       expect(mockRoom.connect).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Microphone on connect', () => {
+    test('enables the microphone on connect for a voice session', async () => {
+      const { mockRoom } = context;
+      mockRoom.on.mockClear();
+      mockRoom.localParticipant.setMicrophoneEnabled.mockClear();
+
+      // Room is globally mocked to return context.mockRoom
+      const _manager = new LiveKitManager('ws://x', 'token', [], {
+        isChatOnly: false,
+      });
+      const connectedHandler = extractEventHandler(
+        mockRoom,
+        RoomEvent.Connected
+      );
+      await connectedHandler?.();
+
+      expect(
+        mockRoom.localParticipant.setMicrophoneEnabled
+      ).toHaveBeenCalledWith(true);
+    });
+
+    test('does NOT enable the microphone on connect for a chat-only session', async () => {
+      const { mockRoom } = context;
+      mockRoom.on.mockClear();
+      mockRoom.localParticipant.setMicrophoneEnabled.mockClear();
+
+      const _manager = new LiveKitManager('ws://x', 'token', [], {
+        isChatOnly: true,
+      });
+      const connectedHandler = extractEventHandler(
+        mockRoom,
+        RoomEvent.Connected
+      );
+      await connectedHandler?.();
+
+      expect(
+        mockRoom.localParticipant.setMicrophoneEnabled
+      ).not.toHaveBeenCalled();
     });
   });
 });

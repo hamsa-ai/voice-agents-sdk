@@ -7,6 +7,31 @@ import type { ConnectionQuality, Track, TrackPublication } from 'livekit-client'
  * Represents the current state of the voice agent
  */
 export type AgentState = 'idle' | 'initializing' | 'listening' | 'thinking' | 'speaking';
+/** Identifies who authored a conversation message. */
+export type MessageRole = 'user' | 'agent';
+/**
+ * A structured conversation message surfaced to chat UIs.
+ *
+ * Emitted via the `messageReceived` event for both agent replies and user
+ * transcriptions. Unlike the plain-string `answerReceived`/`transcriptionReceived`
+ * events, this carries the metadata a streaming chat UI needs:
+ * - `id` is stable across a message's streaming updates, so the UI can update the
+ *   same bubble in place instead of appending a new one for each partial.
+ * - `isFinal` distinguishes a streaming partial (`false`) from the completed
+ *   message (`true`).
+ */
+export type ReceivedMessage = {
+    /** Stable id for this message; identical across streaming updates of the same message. */
+    id: string;
+    /** Who authored the message. */
+    role: MessageRole;
+    /** The message text. For streaming segments this is the full text received so far. */
+    text: string;
+    /** True for the completed message, false for an in-progress streaming partial. */
+    isFinal: boolean;
+    /** Unix epoch milliseconds when the SDK observed this update. */
+    timestamp: number;
+};
 /**
  * Function signature for client-side tools that can be executed by the agent.
  * Tools can be synchronous or asynchronous and accept variable arguments.
