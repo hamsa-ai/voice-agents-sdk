@@ -138,7 +138,12 @@ export default class LiveKitManager extends EventEmitter {
     {
       debug = false,
       avatarContainerSelector,
-    }: { debug?: boolean; avatarContainerSelector?: string } = {}
+      isChatOnly = false,
+    }: {
+      debug?: boolean;
+      avatarContainerSelector?: string;
+      isChatOnly?: boolean;
+    } = {}
   ) {
     super();
 
@@ -162,7 +167,12 @@ export default class LiveKitManager extends EventEmitter {
     this.logger.log('Creating LiveKitConnection module', {
       source: 'LiveKitManager',
     });
-    this.connection = new LiveKitConnection(lkUrl, accessToken, debug);
+    this.connection = new LiveKitConnection(
+      lkUrl,
+      accessToken,
+      debug,
+      isChatOnly
+    );
 
     this.logger.log('Creating LiveKitAnalytics module', {
       source: 'LiveKitManager',
@@ -178,7 +188,7 @@ export default class LiveKitManager extends EventEmitter {
       source: 'LiveKitManager',
       error: { toolsCount: tools.length },
     });
-    this.toolRegistry = new LiveKitToolRegistry(tools, debug);
+    this.toolRegistry = new LiveKitToolRegistry(tools, debug, isChatOnly);
 
     if (tools.length > 0) {
       this.logger.log('Registered client-side tools', {
@@ -1058,6 +1068,12 @@ export default class LiveKitManager extends EventEmitter {
       );
       this.emit('transcriptionReceived', transcription);
     });
+    this.toolRegistry.on('messageReceived', (message) =>
+      this.emit('messageReceived', message)
+    );
+    this.toolRegistry.on('chatMessageReceived', (message) =>
+      this.emit('chatMessageReceived', message)
+    );
 
     // Forward custom agent events for application-specific logic
     this.toolRegistry.on('customEvent', (eventType, eventData, metadata) =>
@@ -1187,7 +1203,11 @@ export default class LiveKitManager extends EventEmitter {
       [
         RoomEvent.TranscriptionReceived,
         (
-          transcriptions: Array<{ text?: string; final?: boolean }>,
+          transcriptions: Array<{
+            id?: string;
+            text?: string;
+            final?: boolean;
+          }>,
           participant?: Participant
         ) => {
           const SEGMENT_PREVIEW_LENGTH = 50;

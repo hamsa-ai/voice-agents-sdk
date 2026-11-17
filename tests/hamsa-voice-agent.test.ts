@@ -161,6 +161,40 @@ describe('HamsaVoiceAgent', () => {
       expect(voiceAgent.jobId).toBe('mock-job-id');
     });
 
+    test('should send isChatOnly in both participant-token and conversation-init bodies', async () => {
+      const wakeLockMocks = createWakeLockMocks();
+      applyWakeLockMocks(voiceAgent, wakeLockMocks);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        isChatOnly: true,
+      });
+
+      const tokenBody = JSON.parse((fetch as any).mock.calls[0][1].body);
+      const conversationBody = JSON.parse((fetch as any).mock.calls[1][1].body);
+
+      expect(tokenBody.isChatOnly).toBe(true);
+      expect(conversationBody.isChatOnly).toBe(true);
+    });
+
+    test('should default isChatOnly to false when not provided', async () => {
+      const wakeLockMocks = createWakeLockMocks();
+      applyWakeLockMocks(voiceAgent, wakeLockMocks);
+
+      await voiceAgent.start({
+        agentId: 'test-agent',
+        params: {},
+        voiceEnablement: true,
+      });
+
+      const tokenBody = JSON.parse((fetch as any).mock.calls[0][1].body);
+      const conversationBody = JSON.parse((fetch as any).mock.calls[1][1].body);
+
+      expect(tokenBody.isChatOnly).toBe(false);
+      expect(conversationBody.isChatOnly).toBe(false);
+    });
+
     test('should handle token fetch failure', async () => {
       const errorSpy = jest.fn();
       voiceAgent.on('error', errorSpy);

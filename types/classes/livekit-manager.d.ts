@@ -90,9 +90,10 @@ export default class LiveKitManager extends EventEmitter {
      * );
      * ```
      */
-    constructor(lkUrl: string, accessToken: string, tools?: Tool[], { debug, avatarContainerSelector, }?: {
+    constructor(lkUrl: string, accessToken: string, tools?: Tool[], { debug, avatarContainerSelector, isChatOnly, }?: {
         debug?: boolean;
         avatarContainerSelector?: string;
+        isChatOnly?: boolean;
     });
     /**
      * Establishes connection to the LiveKit room and initializes voice agent communication

@@ -190,6 +190,8 @@ export declare class LiveKitConnection extends EventEmitter {
     private hasEmittedConnected;
     /** Debug logger instance for conditional logging */
     private readonly logger;
+    /** When true, the session is text/chat-only and the microphone is never enabled */
+    private readonly isChatOnly;
     /**
      * Creates a new LiveKitConnection instance
      *
@@ -200,6 +202,7 @@ export declare class LiveKitConnection extends EventEmitter {
      * @param lkUrl - LiveKit WebSocket URL (e.g., 'wss://livekit.example.com')
      * @param accessToken - JWT token for room authentication and authorization
      * @param debug - Enable debug logging (defaults to false)
+     * @param isChatOnly - When true, the microphone is never enabled (text/chat-only session)
      *
      * @example
      * ```typescript
@@ -213,7 +216,7 @@ export declare class LiveKitConnection extends EventEmitter {
      * await connection.connect();
      * ```
      */
-    constructor(lkUrl: string, accessToken: string, debug?: boolean);
+    constructor(lkUrl: string, accessToken: string, debug?: boolean, isChatOnly?: boolean);
     /**
      * Provides access to the underlying LiveKit room instance
      *

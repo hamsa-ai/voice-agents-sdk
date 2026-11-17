@@ -13,7 +13,10 @@ export type MockRoom = {
   prepareConnection: jest.Mock;
   registerRpcMethod: jest.Mock;
   unregisterRpcMethod: jest.Mock;
+  registerTextStreamHandler: jest.Mock;
+  unregisterTextStreamHandler: jest.Mock;
   localParticipant: {
+    identity: string;
     setMicrophoneEnabled: jest.Mock;
     getTrackPublication: jest.Mock;
   };
@@ -41,7 +44,10 @@ export function createMockRoom(): MockRoom {
     prepareConnection: jest.fn(),
     registerRpcMethod: jest.fn(),
     unregisterRpcMethod: jest.fn(),
+    registerTextStreamHandler: jest.fn(),
+    unregisterTextStreamHandler: jest.fn(),
     localParticipant: {
+      identity: 'local-user',
       setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined),
       getTrackPublication: jest.fn().mockReturnValue({
         track: {

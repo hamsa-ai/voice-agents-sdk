@@ -158,10 +158,10 @@
  * - Includes fallback mechanisms for connection reliability
  */
 
-import type { DataPacket_Kind } from '@livekit/protocol';
 import { EventEmitter } from 'events';
 import {
   type ConnectionState,
+  type DataChannelKind,
   type Participant,
   type RemoteParticipant,
   Room,
@@ -214,6 +214,9 @@ export class LiveKitConnection extends EventEmitter {
   /** Debug logger instance for conditional logging */
   private readonly logger: DebugLogger;
 
+  /** When true, the session is text/chat-only and the microphone is never enabled */
+  private readonly isChatOnly: boolean;
+
   /**
    * Creates a new LiveKitConnection instance
    *
@@ -224,6 +227,7 @@ export class LiveKitConnection extends EventEmitter {
    * @param lkUrl - LiveKit WebSocket URL (e.g., 'wss://livekit.example.com')
    * @param accessToken - JWT token for room authentication and authorization
    * @param debug - Enable debug logging (defaults to false)
+   * @param isChatOnly - When true, the microphone is never enabled (text/chat-only session)
    *
    * @example
    * ```typescript
@@ -237,11 +241,17 @@ export class LiveKitConnection extends EventEmitter {
    * await connection.connect();
    * ```
    */
-  constructor(lkUrl: string, accessToken: string, debug = false) {
+  constructor(
+    lkUrl: string,
+    accessToken: string,
+    debug = false,
+    isChatOnly = false
+  ) {
     super();
     this.lkUrl = lkUrl;
     this.accessToken = accessToken;
     this.logger = createDebugLogger(debug);
+    this.isChatOnly = isChatOnly;
 
     // Initialize LiveKit Room with optimal configuration for voice agents
     this.room = new Room({
@@ -647,8 +657,15 @@ export class LiveKitConnection extends EventEmitter {
         },
       });
 
-      // Enable microphone after connection
-      await this.room?.localParticipant?.setMicrophoneEnabled(true);
+      // Enable microphone after connection — skipped for chat-only sessions,
+      // which have no audio and must not trigger the browser mic prompt.
+      if (this.isChatOnly) {
+        this.logger.log('Chat-only session: skipping microphone enable', {
+          source: 'LiveKitConnection',
+        });
+      } else {
+        await this.room?.localParticipant?.setMicrophoneEnabled(true);
+      }
 
       // Emit 'connected' only once per session
       if (!this.hasEmittedConnected) {
@@ -886,7 +903,7 @@ export class LiveKitConnection extends EventEmitter {
    * Handles DataChannel buffer status changes
    * This is critical for debugging DataChannel errors
    */
-  #handleDCBufferStatusChanged(isLow: boolean, kind: DataPacket_Kind): void {
+  #handleDCBufferStatusChanged(isLow: boolean, kind: DataChannelKind): void {
     this.logger.log('DataChannel buffer status changed', {
       source: 'LiveKitConnection',
       error: {
