@@ -973,7 +973,7 @@ agent.start({
 An API key passed as `new HamsaVoiceAgent(API_KEY)` keeps working: its calls reach what your agent runs in prod, as before. Move when you can. Anyone who opens your page can read a key in it, and an API key can do much more than start calls. A public key can only start calls, in the one environment it was made for.
 
 1. On the API keys page of the Hamsa dashboard, create a public key for prod, for your live site. You can limit it to some agents, and to your domains.
-2. Update the SDK: public keys need 0.6.4-beta.3 or later.
+2. Update the SDK: public keys need 0.7.0 or later.
 3. Pass the key as `publicKey`. Options you already pass go in the same object:
 
    ```javascript
